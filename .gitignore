@@ -52,3 +52,5 @@ SLIDE_BY_SLIDE_SCRIPT.md
 *.pdf
 *.pptx
 *.ppt
+*.docx
+generate_docx_report.py
