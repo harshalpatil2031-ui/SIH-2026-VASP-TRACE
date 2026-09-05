@@ -45,3 +45,10 @@ ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 .DS_Store
+
+# Local Pitch Scripts & PPTs
+PITCH_SCRIPT.md
+SLIDE_BY_SLIDE_SCRIPT.md
+*.pdf
+*.pptx
+*.ppt
