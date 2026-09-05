@@ -54,3 +54,4 @@ SLIDE_BY_SLIDE_SCRIPT.md
 *.ppt
 *.docx
 generate_docx_report.py
+generate_both_docx_reports.py
