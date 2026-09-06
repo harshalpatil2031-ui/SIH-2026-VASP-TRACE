@@ -1,6 +1,6 @@
 """
 Tamper-Evident Forensic Evidence & Cryptographic SHA-256 Verifier.
-Ensures evidentiary integrity for courtroom admissibility under Section 65B IEA / Section 63 BSA 2023.
+Generates tamper-evident technical integrity records under Section 63 Bharatiya Sakshya Adhiniyam (BSA) 2023.
 """
 import hashlib
 import json

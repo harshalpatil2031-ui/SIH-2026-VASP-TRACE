@@ -127,6 +127,30 @@
         "minimum_sweep_threshold_usdt": 10.0,
         "consolidation_type": "Automated Batch Sweep"
       }
+    },
+    {
+      "vasp_id": "VASP-MUDREX",
+      "vasp_name": "Mudrex (Tezro Inc)",
+      "country": "India",
+      "fiu_ind_registered": true,
+      "fiu_registration_number": "FIU-IND/VASP/2024/055",
+      "compliance_nodal_email": "compliance@mudrex.com",
+      "sahyog_integrated": false,
+      "supported_chains": ["Ethereum", "TRON", "Bitcoin"],
+      "known_hot_wallets": ["0x3f5CE5FBFe3E9af3971dD833D26bA9b5C936f0bE"],
+      "deposit_sweep_pattern": {"sweep_time_window_minutes": 60, "minimum_sweep_threshold_usdt": 10.0, "consolidation_type": "Internal Sweep Transaction"}
+    },
+    {
+      "vasp_id": "VASP-GIOTTUS",
+      "vasp_name": "Giottus (Giottus Technologies Pvt Ltd)",
+      "country": "India",
+      "fiu_ind_registered": true,
+      "fiu_registration_number": "FIU-IND/VASP/2023/021",
+      "compliance_nodal_email": "legal@giottus.com",
+      "sahyog_integrated": false,
+      "supported_chains": ["Bitcoin", "Ethereum", "TRON"],
+      "known_hot_wallets": ["0x8B3a350Cf5c34C9194Ca85829a2df0EC3153be0A"],
+      "deposit_sweep_pattern": {"sweep_time_window_minutes": 75, "minimum_sweep_threshold_usdt": 20.0, "consolidation_type": "Manual Batch Sweep"}
     }
   ]
 }
