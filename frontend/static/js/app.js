@@ -318,7 +318,18 @@ function renderAttribution(attr, chainName) {
     if (vaspName) vaspName.innerText = attr.primary_vasp ? attr.primary_vasp.vasp_name : "Unknown VASP";
 
     const vaspChain = document.getElementById("vaspChainDisplay");
-    if (vaspChain) vaspChain.innerText = `Blockchain: ${chainName} • Distance: ${attr.total_hops} Transfers away`;
+    if (vaspChain) vaspChain.innerText = `Blockchain: ${chainName} • Distance: ${attr.selected_vasp_hop} Transfers away`;
+    
+    const recText = document.getElementById("recommendedActionText");
+    if (recText) {
+        let confLevelText = "Low attribution confidence";
+        if (attr.confidence_level === "HIGH") confLevelText = "High attribution confidence";
+        else if (attr.confidence_level === "MEDIUM") confLevelText = "Medium attribution confidence";
+        else if (attr.no_qualifying_vasp) confLevelText = "No qualifying VASP attribution";
+        
+        let targetText = attr.primary_vasp && !attr.no_qualifying_vasp ? ` at ${attr.primary_vasp.vasp_name}` : "";
+        recText.innerText = `High risk + ${confLevelText}${targetText}.`;
+    }
     
     // FIU Badge
     const fiuBadge = document.getElementById("fiuBadge");
@@ -371,7 +382,7 @@ function renderCrossCaseAlert(alert) {
         }
         
         const crossNotes = document.getElementById("crossCaseNotes");
-        if (crossNotes) crossNotes.innerText = "This exact same middleman wallet was recorded in Mumbai Cyber Crime Case #101! Indicates a shared criminal network.";
+        if (crossNotes) crossNotes.innerText = "This wallet address was recorded in Mumbai Cyber Crime Case #101. Cross-case infrastructure overlap detected — analyst review required before drawing investigative conclusions.";
     } else {
         alertBox.classList.add("hidden");
     }
@@ -459,9 +470,9 @@ async function dispatchSahyog() {
         statusBox.classList.remove("hidden");
         document.getElementById("sahyogReceiptToken").innerText = result.sahyog_receipt_token;
         document.getElementById("sahyogVaspTicket").innerText = result.vasp_acknowledgment.compliance_ticket_id;
-        document.getElementById("sahyogVaspAction").innerText = "Account placed on 72-hour freeze by Exchange";
+        document.getElementById("sahyogVaspAction").innerText = "PENDING — no action taken until authorized investigator approves";
 
-        btn.innerHTML = `✅ Notice Submitted & Account Frozen in Escrow`;
+        btn.innerHTML = `✅ Notice Submitted — Pending Authorized Investigator Review`;
     } catch (err) {
         console.error("Dispatch failed", err);
         btn.disabled = false;
@@ -511,20 +522,30 @@ function openReportModal() {
 
     // 3. VASP Attribution Findings
     document.getElementById("repVASP").innerText = attr.primary_vasp.vasp_name;
-    document.getElementById("repConfidenceBadge").innerText = `${attr.confidence_score}% High Confidence`;
+    
+    let repConfText = "Low Confidence";
+    if (attr.confidence_level === "HIGH") repConfText = "High Confidence";
+    else if (attr.confidence_level === "MEDIUM") repConfText = "Medium Confidence";
+    document.getElementById("repConfidenceBadge").innerText = `${attr.confidence_score}% ${repConfText}`;
     document.getElementById("repDeposit").innerText = attr.primary_vasp.deposit_address;
-    document.getElementById("repReason").innerText = `${attr.flow_percentage}% of stolen funds (${attr.volume_to_vasp} ${meta.token}) reached ${attr.primary_vasp.vasp_name} across ${attr.total_hops} transfers in under 45 minutes.`;
+    
+    const repReason = document.getElementById("repReason");
+    if (attr.no_qualifying_vasp) {
+        repReason.innerText = "No qualifying VASP-associated endpoint was identified within the traced depth.";
+    } else {
+        repReason.innerText = `${attr.flow_percentage}% of stolen funds (${attr.volume_to_vasp} ${meta.token}) reached ${attr.primary_vasp.vasp_name} across ${attr.selected_vasp_hop} transfers in under 45 minutes.`;
+    }
 
-    // 4. Cross-Case Syndicate Link
+    // 4. Cross-Case Infrastructure Correlation
     const syndicateBox = document.getElementById("repSyndicateBox");
     if (crossCase && crossCase.has_shared_infrastructure) {
         syndicateBox.classList.remove("hidden");
-        document.getElementById("repSyndicateNotes").innerText = `Middleman Wallet (${crossCase.shared_wallet_address}) was previously identified in ${crossCase.linked_case_titles[0] || 'Case #101'}. Indicates an active shared criminal syndicate.`;
+        document.getElementById("repSyndicateNotes").innerText = `Wallet (${crossCase.shared_wallet_address}) was previously identified in ${crossCase.linked_case_titles[0] || 'Case #101'}. Cross-case infrastructure overlap detected. Analyst review required before drawing investigative conclusions.`;
     } else {
         syndicateBox.classList.add("hidden");
     }
 
-    // 5. Section 65B Seal
+    // 5. Tamper-Evident Technical Integrity Record
     document.getElementById("repHonorSeal").innerText = seal.sha256_hash;
     document.getElementById("repTimestamp").innerText = seal.timestamp;
 
@@ -572,10 +593,10 @@ async function verifySubmittedHash() {
         resultBox.innerHTML = `
             <div class="flex items-center gap-2 font-bold text-sm text-emerald-400">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                REPORT INTEGRITY VERIFIED (UNMODIFIED)
+                TECHNICAL INTEGRITY VERIFIED (UNMODIFIED)
             </div>
-            <p class="mt-1 text-slate-300 font-sans">The evidence and transaction records have NOT been modified or tampered with.</p>
-            <div class="mt-2 font-mono text-[11px] text-emerald-200/80">Courtroom admissible under Section 65B Indian Evidence Act.</div>
+            <p class="mt-1 text-slate-300 font-sans">The recorded data fields have NOT been modified. SHA-256 checksum matches the original tamper-evident technical integrity record.</p>
+            <div class="mt-2 font-mono text-[11px] text-emerald-200/80">This is a tamper-evident technical integrity record — not a legal certificate or Section 65B certificate.</div>
         `;
     } else {
         resultBox.className = "mt-4 p-4 rounded-xl bg-rose-500/10 border border-rose-500/40 text-rose-300 text-xs font-mono";
