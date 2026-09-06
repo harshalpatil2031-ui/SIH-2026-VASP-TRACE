@@ -301,7 +301,47 @@ KNOWN_VASPS = {
     }
 }
 
+def _generate_chain_address(seed_str: str, chain: str) -> str:
+    """Generates realistic on-chain addresses based on the blockchain network."""
+    h = hashlib.sha256(seed_str.encode()).hexdigest()
+    c_lower = chain.lower()
+    
+    if "solana" in c_lower or "sol" in c_lower:
+        # Base58 charset for Solana Phantom addresses
+        b58_chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        num = int(h, 16)
+        res = []
+        while num > 0 and len(res) < 44:
+            res.append(b58_chars[num % 58])
+            num //= 58
+        return "".join(res)
+    elif "tron" in c_lower:
+        b58_chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        num = int(h, 16)
+        res = ["T"]
+        while num > 0 and len(res) < 34:
+            res.append(b58_chars[num % 58])
+            num //= 58
+        return "".join(res)
+    elif "bitcoin" in c_lower or "btc" in c_lower:
+        return f"bc1q{h[:38]}"
+    else:
+        # EVM / Ethereum default
+        return f"0x{h[:40]}"
+
 def generate_custom_trace(wallet_address: str, chain: str = "Ethereum", max_hops: int = 3) -> Dict[str, Any]:
+    # Auto-detect chain if needed
+    if wallet_address.startswith("0x"):
+        chain = "Ethereum" if chain in ["TRON", "Solana", "Bitcoin"] else chain
+    elif wallet_address.startswith("T") and len(wallet_address) == 34:
+        chain = "TRON"
+    elif len(wallet_address) in [43, 44] and not wallet_address.startswith("0x") and not wallet_address.startswith("T"):
+        chain = "Solana"
+    elif wallet_address.startswith("bc1") or wallet_address.startswith("1") or wallet_address.startswith("3"):
+        chain = "Bitcoin"
+
+    token_name = "USDT (SPL)" if "solana" in chain.lower() else ("BTC" if "bitcoin" in chain.lower() else ("USDT (TRC-20)" if "tron" in chain.lower() else "USDT (ERC-20)"))
+
     seed_val = int(hashlib.md5(wallet_address.encode('utf-8')).hexdigest()[:8], 16)
     random.seed(seed_val)
     
@@ -318,11 +358,11 @@ def generate_custom_trace(wallet_address: str, chain: str = "Ethereum", max_hops
         "label": f"Suspect Wallet ({wallet_address[:6]}...{wallet_address[-4:]})",
         "type": "suspect",
         "chain": chain,
-        "balance": "25 USDT",
+        "balance": f"25 {token_name}",
         "risk_score": 95,
         "risk_level": "HIGH",
-        "entity_name": "Target Suspect Address",
-        "tags": ["Input Wallet Address"],
+        "entity_name": f"Suspect {chain} Wallet",
+        "tags": [f"{chain} Origin Wallet", "Incident Source"],
         "case_ids": ["LIVE-QUERY"],
         "is_shared": False
     })
@@ -333,17 +373,17 @@ def generate_custom_trace(wallet_address: str, chain: str = "Ethereum", max_hops
     
     # 2. Mule Intermediaries
     for h in range(1, max_hops):
-        mule_addr = "0x" + hashlib.sha256(f"{wallet_address}_mule_{h}".encode()).hexdigest()[:40]
+        mule_addr = _generate_chain_address(f"{wallet_address}_mule_{h}", chain)
         nodes.append({
             "id": mule_addr,
             "label": f"Mule Wallet {h} ({mule_addr[:6]}...{mule_addr[-4:]})",
             "type": "mule",
             "chain": chain,
-            "balance": "2 USDT",
+            "balance": f"2 {token_name}",
             "risk_score": 80,
             "risk_level": "HIGH",
             "entity_name": f"Intermediary Mule #{h}",
-            "tags": ["Middleman Wallet"],
+            "tags": [f"{chain} Mule Layer #{h}"],
             "case_ids": ["LIVE-QUERY"],
             "is_shared": False
         })
@@ -354,8 +394,8 @@ def generate_custom_trace(wallet_address: str, chain: str = "Ethereum", max_hops
             "source": current_source,
             "target": mule_addr,
             "amount": tx_amt,
-            "token": "USDT",
-            "tx_hash": "0x" + hashlib.sha256(f"tx_{current_source}_{mule_addr}".encode()).hexdigest()[:16] + "...",
+            "token": token_name,
+            "tx_hash": _generate_chain_address(f"tx_{current_source}_{mule_addr}", chain)[:18] + "...",
             "timestamp": f"Step {h}",
             "hop": h,
             "is_sweep": False,
@@ -365,17 +405,46 @@ def generate_custom_trace(wallet_address: str, chain: str = "Ethereum", max_hops
         current_amount = tx_amt
         
     # 3. Exchange Deposit Address
-    deposit_addr = "0x" + hashlib.sha256(f"{wallet_address}_deposit".encode()).hexdigest()[:40]
+    deposit_addr = _generate_chain_address(f"{wallet_address}_deposit", chain)
     nodes.append({
         "id": deposit_addr,
         "label": f"{selected_vasp['name']} Deposit Address",
         "type": "deposit",
         "chain": chain,
-        "balance": "0 USDT",
+        "balance": f"0 {token_name}",
         "risk_score": 35,
         "risk_level": "MEDIUM",
         "entity_name": f"{selected_vasp['name']} User Account",
-        "tags": ["User Account at Exchange"],
+        "tags": ["Exchange Deposit Gateway", f"{chain} Inbound Gateway"],
+        "case_ids": ["LIVE-QUERY"],
+        "is_shared": False
+    })
+    
+    edges.append({
+        "id": "e_live_deposit",
+        "source": current_source,
+        "target": deposit_addr,
+        "amount": round(current_amount * 0.98, 2),
+        "token": token_name,
+        "tx_hash": _generate_chain_address(f"tx_{current_source}_{deposit_addr}", chain)[:18] + "...",
+        "timestamp": "Deposit Step",
+        "hop": max_hops,
+        "is_sweep": False,
+        "notes": f"Deposited into {selected_vasp['name']}"
+    })
+    
+    # 4. Exchange Main Wallet
+    vasp_hot_addr = _generate_chain_address(f"{selected_vasp['name']}_hot_vault", chain) if "solana" in chain.lower() or "tron" in chain.lower() else selected_vasp["hot_wallet_patterns"][0]
+    nodes.append({
+        "id": vasp_hot_addr,
+        "label": f"{selected_vasp['name']}",
+        "type": "vasp_hot",
+        "chain": chain,
+        "balance": f"25M {token_name}",
+        "risk_score": 10,
+        "risk_level": "LOW",
+        "entity_name": f"{selected_vasp['name']} Main Custody",
+        "tags": ["Verified Hot Vault", f"FIU-IND Verified {chain} Pool"],
         "case_ids": ["LIVE-QUERY"],
         "is_shared": False
     })
