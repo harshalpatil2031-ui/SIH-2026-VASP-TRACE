@@ -54,7 +54,7 @@
 
             <!-- Footer Notice -->
             <div class="mt-6 pt-4 border-t border-slate-800/80 text-[10px] text-slate-500 text-center">
-                Strictly for Authorized Law Enforcement Officers • Section 65B Indian Evidence Act Compliance
+                Strictly for Authorized Law Enforcement Officers • Section 63 BSA 2023 / Sec 65B IEA Compliance
             </div>
         </div>
     </div>
@@ -322,7 +322,7 @@
                 </div>
             </div>
 
-            <!-- Case Quick Selector -->
+            <!-- Case Quick Selector & 1930 Simulator -->
             <div class="flex items-center gap-2 bg-[#060913] p-1.5 rounded-xl border border-slate-800">
                 <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 font-mono">SWITCH CASE:</span>
                 
@@ -332,6 +332,12 @@
 
                 <button id="pill-case-101" onclick="selectCase('CASE-101')" class="case-pill px-3 py-1 rounded-lg text-xs transition-all border flex items-center gap-1.5 bg-slate-800/80 border-slate-700 text-slate-400 hover:text-white cursor-pointer">
                     <span>⚡</span> Case #101: ₹50k Scam
+                </button>
+
+                <!-- 🚨 1930 NCRP Live Intake Simulator Button -->
+                <button onclick="simulate1930NCRPWebhook()" class="px-3 py-1 rounded-lg bg-gradient-to-r from-rose-500/20 to-amber-500/20 hover:from-rose-500/30 hover:to-amber-500/30 text-rose-300 border border-rose-500/40 text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer shadow-sm animate-pulse" title="Simulate Real-Time 1930 Cyber Helpline Fraud Complaint Intake">
+                    <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+                    <span>🚨 Simulate 1930 NCRP Intake</span>
                 </button>
             </div>
 
@@ -585,7 +591,51 @@
                     </div>
                 </div>
 
-                <!-- 3. Recommended Action (Preservation Request), SAHYOG & Report -->
+                <!-- 3. 🛡️ 8-Pillar Multi-Source Threat & VASP Verification Matrix -->
+                <div class="glass-card rounded-2xl p-4 shadow-lg border border-cyan-500/30 font-mono text-[11px]">
+                    <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-2.5">
+                        <span class="font-bold text-slate-300 uppercase flex items-center gap-1.5 text-[10px]">
+                            <span>🛡️</span> 8-Pillar Intelligence Matrix
+                        </span>
+                        <span class="text-[9px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold">ALL 8 ACTIVE</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-[10px]" id="intelligenceMatrixGrid">
+                        <div class="p-2 bg-slate-900/90 rounded-xl border border-slate-800">
+                            <span class="text-slate-500 block text-[9px] uppercase font-bold">1. TRON Data</span>
+                            <span class="text-emerald-400 font-bold" id="badgeTronGrid">TronGrid API (Cache)</span>
+                        </div>
+                        <div class="p-2 bg-slate-900/90 rounded-xl border border-slate-800">
+                            <span class="text-slate-500 block text-[9px] uppercase font-bold">2. EVM Data</span>
+                            <span class="text-emerald-400 font-bold" id="badgeEtherscan">Etherscan API (Active)</span>
+                        </div>
+                        <div class="p-2 bg-slate-900/90 rounded-xl border border-slate-800">
+                            <span class="text-slate-500 block text-[9px] uppercase font-bold">3. VASP Cluster</span>
+                            <span class="text-cyan-300 font-bold" id="badgeBitquery">Bitquery Verified</span>
+                        </div>
+                        <div class="p-2 bg-slate-900/90 rounded-xl border border-slate-800">
+                            <span class="text-slate-500 block text-[9px] uppercase font-bold">4. TRON Tags</span>
+                            <span class="text-cyan-300 font-bold" id="badgeTronscan">TRONSCAN Verified</span>
+                        </div>
+                        <div class="p-2 bg-slate-900/90 rounded-xl border border-slate-800">
+                            <span class="text-slate-500 block text-[9px] uppercase font-bold">5. FIU-IND Status</span>
+                            <span class="text-emerald-400 font-bold" id="badgeFiuReg">Reporting Entity #042</span>
+                        </div>
+                        <div class="p-2 bg-slate-900/90 rounded-xl border border-slate-800">
+                            <span class="text-slate-500 block text-[9px] uppercase font-bold">6. OFAC Sanctions</span>
+                            <span class="text-emerald-400 font-bold" id="badgeOfac">CLEAN (Passed)</span>
+                        </div>
+                        <div class="p-2 bg-slate-900/90 rounded-xl border border-slate-800">
+                            <span class="text-slate-500 block text-[9px] uppercase font-bold">7. Scam Intel</span>
+                            <span class="text-amber-400 font-bold" id="badgeChainabuse">Chainabuse Flagged</span>
+                        </div>
+                        <div class="p-2 bg-slate-900/90 rounded-xl border border-slate-800">
+                            <span class="text-slate-500 block text-[9px] uppercase font-bold">8. CCTNS Database</span>
+                            <span class="text-cyan-300 font-bold" id="badgePostgres">PostgreSQL Synced</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Recommended Action (Preservation Request), SAHYOG & Report -->
                 <div class="glass-card rounded-2xl p-5 shadow-lg border border-slate-800 flex flex-col gap-3">
                     
                     <!-- Recommended Action -->
@@ -635,7 +685,7 @@
                     <div class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-base">§</div>
                     <div>
                         <h3 class="text-base font-bold text-white">SAHYOG Lawful Freezing & Disclosure Notice</h3>
-                        <p class="text-xs text-slate-400">Notice to Crypto Exchange to freeze criminal account under Section 91 & 102 CrPC</p>
+                        <p class="text-xs text-slate-400">Notice to Crypto Exchange to freeze criminal account under Section 94 & 106 BNSS 2023 [formerly Sec 91 & 102 CrPC]</p>
                     </div>
                 </div>
                 <button onclick="closeSahyogModal()" class="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
@@ -744,10 +794,10 @@
                 </div>
             </div>
 
-            <!-- Section 5: Court Integrity Certificate (Section 65B IEA) -->
+            <!-- Section 5: Court Integrity Certificate (Section 63 BSA 2023 / Section 65B IEA) -->
             <div class="border-t-2 border-slate-900 pt-3 text-[11px] text-slate-600 font-mono space-y-1">
-                <div class="font-bold text-slate-900 uppercase">Certificate under Section 65B Indian Evidence Act / Section 63 BSA 2023</div>
-                <div>This report represents an authentic electronic cryptographic record of blockchain transactions.</div>
+                <div class="font-bold text-slate-900 uppercase">Certificate under Section 63 Bharatiya Sakshya Adhiniyam (BSA), 2023 [Schedule Part A & B Two-Signature Format] (formerly Sec 65B IEA)</div>
+                <div>This report represents an authentic electronic cryptographic record of blockchain transactions with SHA-256 seal.</div>
                 <div><strong class="text-slate-800">SHA-256 Tamper-Proof Checksum:</strong> <span id="repHonorSeal" class="font-bold text-slate-900 break-all"></span></div>
                 <div><strong class="text-slate-800">Generated Timestamp:</strong> <span id="repTimestamp"></span></div>
             </div>

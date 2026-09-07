@@ -77,21 +77,51 @@ function goToScreen(screen) {
 }
 
 // Launch Analysis from Screen 2 (Create New Case Form)
-function launchAnalysisFromDashboard() {
+async function launchAnalysisFromDashboard() {
     const fir = document.getElementById("dashFIR").value.trim();
     const wallet = document.getElementById("dashWallet").value.trim();
     const chain = document.getElementById("dashChain").value;
     const amount = parseInt(document.getElementById("dashAmount").value) || 180000;
     const notes = document.getElementById("dashNotes").value.trim();
 
+    try {
+        const createRes = await fetch("/api/cases/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                fir_number: fir || "FIR/2026/CY-ADHOC/991",
+                suspect_wallet: wallet || "0x4838B106FCe9647Bdf1E7877BF73cE8B0BAD5f97",
+                chain: chain || "TRON",
+                amount_inr: amount,
+                notes: notes || "Suspect wallet fund tracing"
+            })
+        });
+        if (!createRes.ok) {
+            const errObj = await createRes.json().catch(() => ({}));
+            alert("⚠️ Invalid Wallet Address: " + (errObj.detail || "Please enter a valid crypto wallet address format."));
+            return;
+        }
+        const createData = await createRes.json();
+        if (createData && createData.case_id) {
+            state.currentCaseId = createData.case_id;
+        } else {
+            state.currentCaseId = (wallet.startsWith("TJ9k") ? "CASE-147" : (wallet.startsWith("0x48") ? "CASE-101" : "CUSTOM"));
+        }
+    } catch (e) {
+        console.warn("Case creation error:", e);
+        if (e.message && e.message.includes("Invalid")) {
+            alert("⚠️ " + e.message);
+            return;
+        }
+        state.currentCaseId = (wallet.startsWith("TJ9k") ? "CASE-147" : (wallet.startsWith("0x48") ? "CASE-101" : "CUSTOM"));
+    }
+
     // Populate Screen 3 Workbench
-    document.getElementById("caseHeaderFIR").innerText = fir;
+    document.getElementById("caseHeaderFIR").innerText = fir || "FIR/2026/CY-ADHOC/991";
     document.getElementById("inputWallet").value = wallet;
     document.getElementById("selectChain").value = chain;
     document.getElementById("caseHeaderAmount").innerText = `₹${amount.toLocaleString()}`;
     document.getElementById("caseNotes").innerText = notes;
-
-    state.currentCaseId = (wallet.startsWith("TJ9k") ? "CASE-147" : (wallet.startsWith("0x48") ? "CASE-101" : "CUSTOM"));
 
     // Switch to Screen 3 and run trace
     goToScreen("ANALYSIS");
@@ -257,7 +287,8 @@ async function triggerTrace() {
         });
 
         if (!response.ok) {
-            throw new Error(`HTTP Error: ${response.status}`);
+            const errObj = await response.json().catch(() => ({}));
+            throw new Error(errObj.detail || `HTTP Error: ${response.status}`);
         }
 
         const data = await response.json();
@@ -332,6 +363,21 @@ function renderAttribution(attr, chainName) {
         }
     }
 
+    // Risk Assessment Badge
+    const riskBadge = document.getElementById("riskLevelBadge");
+    if (riskBadge) {
+        if (attr.confidence_score >= 80) {
+            riskBadge.className = "px-2 py-0.5 rounded-lg bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold text-[11px] inline-flex items-center gap-1";
+            riskBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse"></span> HIGH RISK (${Math.round(attr.confidence_score)}/100)`;
+        } else if (attr.confidence_score >= 60) {
+            riskBadge.className = "px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold text-[11px] inline-flex items-center gap-1";
+            riskBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> MEDIUM RISK (${Math.round(attr.confidence_score)}/100)`;
+        } else {
+            riskBadge.className = "px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold text-[11px] inline-flex items-center gap-1";
+            riskBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> LOW RISK (${Math.round(attr.confidence_score)}/100)`;
+        }
+    }
+
     // Populate 4 Explainability Factors ("Why This Attribution?")
     const expContainer = document.getElementById("explainabilityList");
     if (expContainer && attr.explainability) {
@@ -352,6 +398,73 @@ function renderAttribution(attr, chainName) {
             `;
             expContainer.appendChild(item);
         });
+    }
+
+    // Synchronize 8-Pillar Intelligence Matrix
+    const intel = (attr && attr.intelligence_sources) ? attr.intelligence_sources : (state.traceData ? state.traceData.intelligence_sources : null);
+    if (intel) {
+        const bTronGrid = document.getElementById("badgeTronGrid");
+        if (bTronGrid && intel.source_1_trongrid) {
+            bTronGrid.innerText = `${intel.source_1_trongrid.api} (${intel.source_1_trongrid.status})`;
+            bTronGrid.className = intel.source_1_trongrid.status === "ACTIVE" ? "text-emerald-400 font-bold" : "text-cyan-300 font-bold";
+        }
+
+        const bEtherscan = document.getElementById("badgeEtherscan");
+        if (bEtherscan && intel.source_2_etherscan) {
+            bEtherscan.innerText = `${intel.source_2_etherscan.api} (${intel.source_2_etherscan.status})`;
+            bEtherscan.className = intel.source_2_etherscan.status === "ACTIVE" ? "text-emerald-400 font-bold" : "text-cyan-300 font-bold";
+        }
+
+        const bBitquery = document.getElementById("badgeBitquery");
+        if (bBitquery && intel.source_3_bitquery) {
+            bBitquery.innerText = intel.source_3_bitquery.cluster_id || "Bitquery Verified";
+            bBitquery.className = "text-cyan-300 font-bold";
+        }
+
+        const bTronscan = document.getElementById("badgeTronscan");
+        if (bTronscan && intel.source_4_tronscan) {
+            bTronscan.innerText = intel.source_4_tronscan.label_tag || "TRONSCAN Verified";
+            bTronscan.className = "text-cyan-300 font-bold";
+        }
+
+        const bFiuReg = document.getElementById("badgeFiuReg");
+        if (bFiuReg && intel.source_5_fiu_ind) {
+            if (intel.source_5_fiu_ind.fiu_ind_registered) {
+                bFiuReg.innerText = `Reporting Entity #${intel.source_5_fiu_ind.registration_number || '042'}`;
+                bFiuReg.className = "text-emerald-400 font-bold";
+            } else {
+                bFiuReg.innerText = "Foreign VASP (Non-Reg)";
+                bFiuReg.className = "text-amber-400 font-bold";
+            }
+        }
+
+        const bOfac = document.getElementById("badgeOfac");
+        if (bOfac && intel.source_6_ofac_sdn) {
+            if (intel.source_6_ofac_sdn.is_sanctioned) {
+                bOfac.innerText = "⚠️ SANCTIONED (SDN MATCH)";
+                bOfac.className = "text-rose-400 font-bold animate-pulse";
+            } else {
+                bOfac.innerText = "CLEAN (Passed SDN Check)";
+                bOfac.className = "text-emerald-400 font-bold";
+            }
+        }
+
+        const bChainabuse = document.getElementById("badgeChainabuse");
+        if (bChainabuse && intel.source_7_chainabuse) {
+            if (intel.source_7_chainabuse.scam_reports_count > 0) {
+                bChainabuse.innerText = `Flagged (${intel.source_7_chainabuse.scam_reports_count} Reports)`;
+                bChainabuse.className = "text-amber-400 font-bold";
+            } else {
+                bChainabuse.innerText = "Clean (0 Reports)";
+                bChainabuse.className = "text-emerald-400 font-bold";
+            }
+        }
+
+        const bPostgres = document.getElementById("badgePostgres");
+        if (bPostgres && intel.source_8_postgres) {
+            bPostgres.innerText = `${intel.source_8_postgres.engine} (CCTNS Synced)`;
+            bPostgres.className = "text-cyan-300 font-bold";
+        }
     }
 }
 
@@ -575,7 +688,7 @@ async function verifySubmittedHash() {
                 REPORT INTEGRITY VERIFIED (UNMODIFIED)
             </div>
             <p class="mt-1 text-slate-300 font-sans">The evidence and transaction records have NOT been modified or tampered with.</p>
-            <div class="mt-2 font-mono text-[11px] text-emerald-200/80">Courtroom admissible under Section 65B Indian Evidence Act.</div>
+            <div class="mt-2 font-mono text-[11px] text-emerald-200/80">Courtroom admissible under Section 63 BSA 2023 [Schedule Two-Signature Format] (formerly Sec 65B IEA).</div>
         `;
     } else {
         resultBox.className = "mt-4 p-4 rounded-xl bg-rose-500/10 border border-rose-500/40 text-rose-300 text-xs font-mono";
@@ -595,3 +708,41 @@ function copyText(elemId) {
     navigator.clipboard.writeText(text);
     alert("Copied: " + text);
 }
+
+// ================= 1930 NCRP LIVE INTAKE WEBHOOK SIMULATOR =================
+async function simulate1930NCRPWebhook() {
+    // 1. Show notification toast simulating incoming NCRP / 1930 cyber helpline alert
+    const toast = document.createElement("div");
+    toast.className = "fixed top-5 right-5 z-50 p-4 rounded-2xl bg-[#0b1120]/95 border-2 border-rose-500 text-white shadow-2xl backdrop-blur-md max-w-md font-mono transition-all transform duration-300";
+    toast.innerHTML = `
+        <div class="flex items-start gap-3">
+            <div class="p-2 rounded-xl bg-rose-500/20 text-rose-400 text-lg">🚨</div>
+            <div class="flex-1">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-black text-rose-400 uppercase tracking-wide">LIVE 1930 NCRP INTAKE</span>
+                    <span class="text-[10px] text-slate-400 font-bold">JUST NOW</span>
+                </div>
+                <div class="text-xs font-bold text-white mt-1">FIR/2026/CY-JPR/709 • Jaipur Cyber Cell</div>
+                <div class="text-[11px] text-slate-300 mt-0.5">Victim: Dr. Amit Mehra • ₹2,10,000 USDT TRC-20</div>
+                <div class="text-[10px] text-cyan-300 mt-1 font-mono break-all">Suspect: TJ9kLpBw81xPqrN4x78G44mX2e1Vb889Zq</div>
+                <div class="mt-2 text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                    Auto-routing case to VASP TRACE Workbench...
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+        toast.remove();
+    }, 4500);
+
+    // 2. Select Case 147, switch to Screen 3, and auto run trace
+    await selectCase("CASE-147", false);
+    goToScreen("ANALYSIS");
+    setTimeout(() => {
+        triggerTrace();
+    }, 300);
+}
+

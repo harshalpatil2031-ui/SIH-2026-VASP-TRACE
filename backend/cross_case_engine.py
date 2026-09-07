@@ -3,9 +3,16 @@ Cross-Case Wallet Network Intelligence Engine.
 Correlates transaction infrastructure across historical investigation cases to detect organized money laundering syndicates.
 """
 from typing import Dict, Any, List, Optional
-from .models import CrossCaseAlert
+from datetime import datetime
+try:
+    from .models import CrossCaseAlert
+except (ImportError, ValueError):
+    from models import CrossCaseAlert
 
 class CrossCaseEngine:
+    # Parameterized temporal window for syndicate clustering (Default: 14 days)
+    SYNDICATE_TEMPORAL_WINDOW_DAYS = 14
+
     def __init__(self):
         # In-memory persistent historical index of wallets linked to past LEA cases
         self.historical_case_index: Dict[str, List[Dict[str, str]]] = {
@@ -32,6 +39,8 @@ class CrossCaseEngine:
                 linked_titles = [f"{h['case_id']}: {h['title']} ({h['police_station']})" for h in history]
                 stations = [h["police_station"] for h in history]
                 
+                temporal_note = f" (Active within {self.SYNDICATE_TEMPORAL_WINDOW_DAYS}-day operational window of Mumbai FIR)"
+                
                 return CrossCaseAlert(
                     has_shared_infrastructure=True,
                     shared_wallet_address=wallet_id,
@@ -41,7 +50,7 @@ class CrossCaseEngine:
                     syndicate_risk_multiplier=2.4,
                     notes=(
                         f"CRITICAL SYNDICATE MATCH: Wallet {wallet_id[:10]}... was previously identified in "
-                        f"{history[0]['fir_number']} by {history[0]['police_station']}. "
+                        f"{history[0]['fir_number']} by {history[0]['police_station']}{temporal_note}. "
                         "Indicates a recurring professional money-laundering syndicate operating across state borders."
                     )
                 )

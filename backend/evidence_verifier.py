@@ -36,7 +36,13 @@ class EvidenceVerifier:
             "timestamp": snapshot_payload["generated_at"],
             "snapshot_data": snapshot_payload,
             "certificate_status": "CERTIFIED_TAMPER_EVIDENT",
-            "statute": "Certified under Section 65B Indian Evidence Act / Sec 63 BSA 2023"
+            "statute": "Certified under Section 63 of the Bharatiya Sakshya Adhiniyam (BSA), 2023 [Schedule Part A & Part B Two-Signature Format] (formerly Sec 65B IEA)",
+            "certificate_schedule_format": {
+                "part_a_signatory": "Investigating Officer / Custodian of Device",
+                "part_b_signatory": "Cyber Forensic Expert / Technical In-Charge",
+                "hash_algorithm": "SHA-256 (FIPS 180-4)",
+                "tamper_evident_seal": sha256_seal
+            }
         }
 
     def verify_hash(self, submitted_hash: str, expected_hash: str) -> Dict[str, Any]:
