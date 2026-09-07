@@ -6,10 +6,11 @@ from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+from datetime import datetime
 import os
 import hashlib
-from datetime import datetime
+import sqlite3
 
 try:
     from .models import (
@@ -73,6 +74,158 @@ for c_id, c_data in CASES_DATABASE.items():
     cross_case_engine.register_case_nodes(c_id, c_data, c_data["nodes"])
     db_store.save_case(c_data)
 
+# Database setup for cctns_forensics.db
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cctns_forensics.db")
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_cctns_db():
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # 1. CCTNS Cases Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS cctns_cases (
+                case_id TEXT PRIMARY KEY,
+                fir_number TEXT,
+                title TEXT,
+                police_station TEXT,
+                investigating_officer TEXT,
+                incident_date TEXT,
+                amount_inr REAL,
+                chain TEXT,
+                suspect_wallet TEXT,
+                token TEXT,
+                notes TEXT,
+                status TEXT DEFAULT 'ACTIVE',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # 2. Investigation Runs Table (VASPs identified & 72-hr asset holds)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS investigation_runs (
+                run_id TEXT PRIMARY KEY,
+                case_id TEXT,
+                attributed_vasp TEXT,
+                confidence_score REAL,
+                hold_active INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # 3. Syndicate Shared Infrastructure Table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS syndicate_registry (
+                wallet_address TEXT,
+                case_id TEXT,
+                role TEXT,
+                first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (wallet_address, case_id)
+            )
+        """)
+        # Ensure schema compatibility with preexisting database
+        case_cols = {row[1] for row in cursor.execute("PRAGMA table_info(cctns_cases)").fetchall()}
+        for col, col_type in [("title", "TEXT"), ("amount_inr", "REAL"), ("token", "TEXT DEFAULT 'USDT'"), ("notes", "TEXT"), ("incident_date", "TEXT")]:
+            if col not in case_cols:
+                cursor.execute(f"ALTER TABLE cctns_cases ADD COLUMN {col} {col_type}")
+
+        run_cols = {row[1] for row in cursor.execute("PRAGMA table_info(investigation_runs)").fetchall()}
+        for col, col_type in [("attributed_vasp", "TEXT"), ("confidence_score", "REAL DEFAULT 0.0"), ("hold_active", "INTEGER DEFAULT 1")]:
+            if col not in run_cols:
+                cursor.execute(f"ALTER TABLE investigation_runs ADD COLUMN {col} {col_type}")
+
+        synd_cols = {row[1] for row in cursor.execute("PRAGMA table_info(syndicate_registry)").fetchall()}
+        for col, col_type in [("case_id", "TEXT"), ("role", "TEXT DEFAULT 'Shared Intermediary Mule'"), ("first_seen", "TEXT")]:
+            if col not in synd_cols:
+                cursor.execute(f"ALTER TABLE syndicate_registry ADD COLUMN {col} {col_type}")
+
+        # Seed initial cases if empty
+        cursor.execute("SELECT COUNT(*) FROM cctns_cases")
+        if cursor.fetchone()[0] == 0:
+            initial_cases = [
+                (
+                    "CASE-147",
+                    "FIR/2026/CY-HYD/304",
+                    "₹1,80,000 Loan App Extortion Case",
+                    "Cyber Crime Police Station, Cyberabad",
+                    "Cyber Cell Officer",
+                    "2026-08-30",
+                    180000.0,
+                    "TRON (TRC-20)",
+                    "TJ9kLpBw81xPqrN4x78G44mX2e1Vb889Zq",
+                    "USDT",
+                    "Victim extorted via fake loan app. Stolen money converted to crypto USDT and moved across middleman wallets to an unknown exchange.",
+                    "ACTIVE",
+                    "2026-08-30 10:15:00"
+                ),
+                (
+                    "CASE-101",
+                    "FIR/2026/CY-MUM/892",
+                    "₹50,000 Telegram Investment & Task Scam",
+                    "Cyber Crime Police Station, BKC Mumbai",
+                    "Cyber Cell Officer",
+                    "2026-08-24",
+                    50000.0,
+                    "Ethereum (ERC-20)",
+                    "0x4838B106FCe9647Bdf1E7877BF73cE8B0BAD5f97",
+                    "USDT",
+                    "Victim defrauded by telegram work-from-home task scam. Funds routed to shared mule wallet.",
+                    "ACTIVE",
+                    "2026-08-24 14:30:00"
+                ),
+                (
+                    "CASE-088",
+                    "FIR/2026/CY-BLR/112",
+                    "₹3,20,000 AI Trading Bot Scam",
+                    "Cyber Crime Police Station, Bengaluru",
+                    "Cyber Cell Officer",
+                    "2026-08-15",
+                    320000.0,
+                    "Bitcoin (BTC)",
+                    "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+                    "BTC",
+                    "Victim deposited into fraudulent AI automated crypto trading bot scheme.",
+                    "ACTIVE",
+                    "2026-08-15 09:45:00"
+                )
+            ]
+            cursor.executemany("""
+                INSERT OR REPLACE INTO cctns_cases (case_id, fir_number, title, police_station, investigating_officer, incident_date, amount_inr, stolen_amount_inr, chain, suspect_wallet, token, notes, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, [
+                (c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[6], c[7], c[8], c[9], c[10], c[11], c[12])
+                for c in initial_cases
+            ])
+
+        # Seed investigation_runs if empty
+        cursor.execute("SELECT COUNT(*) FROM investigation_runs")
+        if cursor.fetchone()[0] == 0:
+            initial_runs = [
+                ("RUN-147-01", "CASE-147", "DEMO", "TRON", "TJ9kLpBw81xPqrN4x78G44mX2e1Vb889Zq", "hash147", "{}", "{}", "2026-08-30 11:00:00", "{}", "CoinDCX", 0.94, 1),
+                ("RUN-101-01", "CASE-101", "DEMO", "Ethereum", "0x4838B106FCe9647Bdf1E7877BF73cE8B0BAD5f97", "hash101", "{}", "{}", "2026-08-24 15:10:00", "{}", "Binance", 0.88, 1),
+                ("RUN-088-01", "CASE-088", "DEMO", "Bitcoin", "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", "hash088", "{}", "{}", "2026-08-15 10:20:00", "{}", "CoinSwitch", 0.91, 1)
+            ]
+            cursor.executemany("""
+                INSERT OR REPLACE INTO investigation_runs (run_id, case_id, data_mode, chain, suspect_wallet, manifest_hash, provenance_json, attribution_json, created_at, manifest_json, attributed_vasp, confidence_score, hold_active)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, initial_runs)
+
+        # Seed syndicate_registry if empty
+        cursor.execute("SELECT COUNT(*) FROM syndicate_registry")
+        if cursor.fetchone()[0] == 0:
+            initial_syndicates = [
+                ("0x71c89D8469C3D619A0A02717E11a5D44A1e4f44C", "CASE-101", "Shared Intermediary Mule", "2026-08-24 14:35:00", "FIR/2026/CY-MUM/892, FIR/2026/CY-HYD/304", 2.4, "2026-08-24"),
+                ("0x71c89D8469C3D619A0A02717E11a5D44A1e4f44C", "CASE-147", "Shared Intermediary Mule", "2026-08-30 10:20:00", "FIR/2026/CY-MUM/892, FIR/2026/CY-HYD/304", 2.4, "2026-08-30")
+            ]
+            cursor.executemany("""
+                INSERT OR REPLACE INTO syndicate_registry (wallet_address, case_id, role, first_seen, linked_fir_numbers, risk_multiplier, first_seen_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, initial_syndicates)
+        conn.commit()
+
+init_cctns_db()
+
 @app.get("/api/health")
 def health_check():
     return {
@@ -98,6 +251,114 @@ def source_status():
             "synthetic_demo": {"configured": True, "chain": "Offline demonstration"},
         },
         "disclaimer": "Configuration availability is not evidence of a successful live retrieval. Each trace records its actual source.",
+    }
+
+@app.get("/api/dashboard/my-cases")
+def get_dashboard_cases():
+    """
+    Returns dynamic dashboard metrics and active cases from cctns_forensics.db.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # 1. Total count of rows in cctns_cases
+        cursor.execute("SELECT COUNT(*) FROM cctns_cases WHERE status = 'ACTIVE' OR status IS NULL")
+        active_cases_count = cursor.fetchone()[0]
+
+        # 2. Count of unique attributed exchanges from investigation_runs
+        cursor.execute("SELECT COUNT(DISTINCT attributed_vasp) FROM investigation_runs WHERE attributed_vasp IS NOT NULL AND attributed_vasp != ''")
+        vasps_identified_count = cursor.fetchone()[0]
+
+        # 3. Count of active 72-hour asset holds from investigation_runs
+        cursor.execute("SELECT COUNT(*) FROM investigation_runs WHERE hold_active = 1")
+        active_holds_count = cursor.fetchone()[0]
+
+        # 4. Count from syndicate_registry
+        cursor.execute("SELECT COUNT(*) FROM syndicate_registry")
+        syndicates_linked_count = cursor.fetchone()[0]
+
+        # Fetch all active cases ordered by created_at DESC
+        cursor.execute("""
+            SELECT case_id, fir_number, title, police_station, investigating_officer,
+                   incident_date, amount_inr, chain, suspect_wallet, token, notes, status, created_at
+            FROM cctns_cases
+            WHERE status = 'ACTIVE' OR status IS NULL
+            ORDER BY created_at DESC
+        """)
+        rows = cursor.fetchall()
+        cases_list = [dict(row) for row in rows]
+
+    return {
+        "metrics": {
+            "active_cases": active_cases_count,
+            "vasps_identified": vasps_identified_count,
+            "active_holds": active_holds_count,
+            "syndicates_linked": syndicates_linked_count
+        },
+        "cases": cases_list
+    }
+
+@app.post("/api/cases/create")
+def create_case(payload: Dict[str, Any] = Body(...)):
+    """
+    Creates a new case record in cctns_forensics.db and registers it in the live analysis engine.
+    """
+    fir_number = payload.get("fir_number", "").strip() or "FIR/2026/CY-GEN/001"
+    suspect_wallet = payload.get("suspect_wallet", "").strip()
+    chain = payload.get("chain", "TRON")
+    amount_inr = float(payload.get("amount_inr", 180000))
+    notes = payload.get("notes", "New cybercrime investigation docket.")
+    title = payload.get("title", "").strip() or f"₹{int(amount_inr):,} Crypto Fraud Investigation"
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM cctns_cases")
+        count = cursor.fetchone()[0]
+        case_id = f"CASE-{count + 148}"
+
+        cursor.execute("""
+            INSERT INTO cctns_cases (case_id, fir_number, title, police_station, investigating_officer, incident_date, amount_inr, stolen_amount_inr, chain, suspect_wallet, token, notes, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        """, (
+            case_id,
+            fir_number,
+            title,
+            "Cyber Crime Police Station",
+            "Investigating Officer",
+            datetime.now().strftime("%Y-%m-%d"),
+            amount_inr,
+            amount_inr,
+            chain,
+            suspect_wallet,
+            "USDT",
+            notes,
+            "ACTIVE"
+        ))
+        conn.commit()
+
+    # Register in CASES_DATABASE so immediate workbench analysis works
+    new_case_obj = generate_custom_trace(suspect_wallet, chain=chain)
+    new_case_obj["case_id"] = case_id
+    new_case_obj["title"] = title
+    new_case_obj["fir_number"] = fir_number
+    new_case_obj["amount_inr"] = amount_inr
+    new_case_obj["chain"] = chain
+    new_case_obj["notes"] = notes
+    CASES_DATABASE[case_id] = new_case_obj
+    cross_case_engine.register_case_nodes(case_id, new_case_obj, new_case_obj["nodes"])
+
+    return {
+        "status": "SUCCESS",
+        "case_id": case_id,
+        "case": {
+            "case_id": case_id,
+            "fir_number": fir_number,
+            "title": title,
+            "amount_inr": amount_inr,
+            "chain": chain,
+            "suspect_wallet": suspect_wallet,
+            "notes": notes
+        }
     }
 
 @app.get("/api/cases")
@@ -152,9 +413,27 @@ def create_case(payload: Dict[str, Any] = Body(...)):
 def get_case(case_id: str):
     """Retrieves full investigation case details."""
     case_key = case_id.upper()
-    if case_key not in CASES_DATABASE:
-        raise HTTPException(status_code=404, detail="Case ID not found")
-    return CASES_DATABASE[case_key]
+    if case_key in CASES_DATABASE:
+        return CASES_DATABASE[case_key]
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM cctns_cases WHERE UPPER(case_id) = ?", (case_key,))
+        row = cursor.fetchone()
+        if row:
+            case_dict = dict(row)
+            generated = generate_custom_trace(case_dict["suspect_wallet"], chain=case_dict.get("chain", "TRON"))
+            generated["case_id"] = case_dict["case_id"]
+            generated["title"] = case_dict["title"]
+            generated["fir_number"] = case_dict["fir_number"]
+            generated["police_station"] = case_dict.get("police_station", "Cyber Crime Unit")
+            generated["amount_inr"] = case_dict["amount_inr"]
+            generated["chain"] = case_dict["chain"]
+            generated["notes"] = case_dict["notes"]
+            CASES_DATABASE[case_key] = generated
+            return generated
+
+    raise HTTPException(status_code=404, detail="Case ID not found")
 
 @app.post("/api/trace")
 def trace_and_attribute(payload: Dict[str, Any] = Body(...)):
