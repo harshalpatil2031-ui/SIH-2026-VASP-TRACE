@@ -30,17 +30,25 @@ class EtherscanProvider(BlockchainProvider):
     def get_downstream_transactions(self, address: str, max_hops: int = 6) -> List[NormalizedTransaction]:
         if not self.is_configured:
             raise RuntimeError("ETHERSCAN_API_KEY is not configured.")
-        response = httpx.get(self.base_url, params={
+        params = {
             "chainid": "1", "module": "account", "action": "tokentx",
             "contractaddress": self.usdt_contract, "address": address,
-            # A first-pass live investigation should prioritise the latest
-            # confirmed activity.  Older history remains available through a
-            # deliberate paginated evidence scan.
             "page": "1", "offset": str(self.max_records), "sort": "desc", "apikey": self.api_key,
-        }, timeout=self.timeout_seconds)
+        }
+        response = httpx.get(self.base_url, params=params, timeout=self.timeout_seconds)
         response.raise_for_status()
         payload = response.json()
         result = payload.get("result", [])
+        # If no USDT transactions found, broaden search to any active ERC-20 token
+        if str(payload.get("status")) != "1" or not result:
+            params.pop("contractaddress", None)
+            fallback_resp = httpx.get(self.base_url, params=params, timeout=self.timeout_seconds)
+            if fallback_resp.status_code == 200:
+                fallback_payload = fallback_resp.json()
+                if str(fallback_payload.get("status")) == "1" and isinstance(fallback_payload.get("result"), list):
+                    payload = fallback_payload
+                    result = payload.get("result", [])
+
         if str(payload.get("status")) != "1":
             if "No transactions found" in str(result):
                 return []
