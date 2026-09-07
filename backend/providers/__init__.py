@@ -5,5 +5,6 @@ from .blockchain_provider import BlockchainProvider
 from .synthetic_demo import SyntheticDemoProvider
 from .trongrid_provider import TronGridProvider
 from .etherscan_provider import EtherscanProvider
+from .bitquery_provider import BitqueryProvider
 
-__all__ = ["BlockchainProvider", "SyntheticDemoProvider", "TronGridProvider", "EtherscanProvider"]
+__all__ = ["BlockchainProvider", "SyntheticDemoProvider", "TronGridProvider", "EtherscanProvider", "BitqueryProvider"]

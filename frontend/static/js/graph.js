@@ -186,7 +186,9 @@ function renderGraphData(nodesData, edgesData) {
         group: 'edges',
         data: {
             ...e,
-            amountLabel: `${e.amount.toLocaleString()} ${e.token}`
+            // API values may be serialized as strings by a provider.  Never
+            // let a display-formatting issue discard an otherwise valid graph.
+            amountLabel: `${Number(e.amount || 0).toLocaleString()} ${e.token || ""}`
         }
     }));
 

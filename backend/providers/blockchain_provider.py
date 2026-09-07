@@ -9,6 +9,14 @@ except (ImportError, ValueError):
     from models import NormalizedTransaction
 
 class BlockchainProvider(ABC):
+    """Read-only source of normalized blockchain transfers."""
+
+    provider_name = "Unknown provider"
+
+    @property
+    def is_configured(self) -> bool:
+        return False
+
     @abstractmethod
     def get_downstream_transactions(self, address: str, max_hops: int = 6) -> List[NormalizedTransaction]:
         """Fetch downstream transactions up to max_hops."""
