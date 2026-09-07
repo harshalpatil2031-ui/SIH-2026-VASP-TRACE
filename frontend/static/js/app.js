@@ -218,6 +218,8 @@ function resetToUntracedState() {
         </div>
     `;
     document.getElementById("evidenceHashDisplay").innerText = "Awaiting analysis...";
+    const runDisplay = document.getElementById("traceRunIdDisplay");
+    if (runDisplay) runDisplay.innerText = "Awaiting trace...";
 }
 
 // ================= SCREEN 3: TRIGGER MULTI-HOP TRACE PIPELINE =================
@@ -234,6 +236,8 @@ async function triggerTrace() {
     const wallet = walletInput ? walletInput.value.trim() : "TJ9kLpBw81xPqrN4x78G44mX2e1Vb889Zq";
     const chainSelect = document.getElementById("selectChain");
     const chain = chainSelect ? chainSelect.value : "TRON";
+    const traceModeSelect = document.getElementById("selectTraceMode");
+    const traceMode = traceModeSelect ? traceModeSelect.value : "DEMO";
     const slider = document.getElementById("sliderHops");
     const maxHops = slider ? parseInt(slider.value) : 4;
 
@@ -274,74 +278,163 @@ async function triggerTrace() {
         if (s4) { s4.className = "text-cyan-400 font-bold"; s4.innerText = "⚡ Matching VASP deposit sweep heuristics..."; }
     }, 700);
 
+    let requestDeadline;
     try {
-        const response = await fetch("/api/trace", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                case_id: state.currentCaseId || "CASE-147",
-                wallet_address: wallet,
-                chain: chain,
-                max_hops: maxHops
-            })
-        });
-
-        if (!response.ok) {
-            const errObj = await response.json().catch(() => ({}));
-            throw new Error(errObj.detail || `HTTP Error: ${response.status}`);
+        const payload = {
+            case_id: state.currentCaseId || "CASE-147",
+            wallet_address: wallet,
+            chain: chain,
+            max_hops: maxHops,
+            trace_mode: traceMode
+        };
+        let data;
+        if ((traceMode === "LIVE" || traceMode === "AUTO") && wallet) {
+            const start = await fetch("/api/trace/jobs", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+            });
+            const job = await start.json();
+            if (!start.ok) throw new Error(job.detail || "Could not start live trace.");
+            if (s4) s4.innerText = `⚡ Live evidence scan running (${job.job_id})...`;
+            data = await waitForLiveTrace(job.job_id, s4);
+        } else {
+            const controller = new AbortController();
+            requestDeadline = setTimeout(() => controller.abort(), 28000);
+            const response = await fetch("/api/trace", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                signal: controller.signal, body: JSON.stringify(payload)
+            });
+            clearTimeout(requestDeadline);
+            if (!response.ok) {
+                const errObj = await response.json().catch(() => ({}));
+                throw new Error(errObj.detail || `HTTP Error: ${response.status}`);
+            }
+            data = await response.json();
         }
-
-        const data = await response.json();
         state.traceData = data;
         state.isTraced = true;
 
-        // Complete terminal and show canvas
-        setTimeout(() => {
-            if (s4) { s4.className = "text-emerald-400 font-bold"; s4.innerText = "✅ VASP Attribution & Cross-Case Complete"; }
-            
-            setTimeout(() => {
-                if (terminal) terminal.classList.add("hidden");
+        // Display a completed job immediately.  A prior nested animation left
+        // some completed LIVE results behind the loading/placeholder state.
+        if (s4) { s4.className = "text-emerald-400 font-bold"; s4.innerText = "✅ VASP Attribution & Cross-Case Complete"; }
+        if (terminal) terminal.classList.add("hidden");
 
-                // Ensure Cytoscape is initialized and resized
-                if (!cy) initCytoscape("cy");
-                cy.resize();
+        // Ensure Cytoscape is initialized and resized
+        if (!cy) initCytoscape("cy");
+        cy.resize();
 
-                // Render Cytoscape Graph
-                renderGraphData(data.graph.nodes, data.graph.edges);
-
-                const headerBadge = document.getElementById("step2HeaderBadge");
-                if (headerBadge) headerBadge.className = "flex items-center justify-between bg-cyan-950/40 border border-cyan-500/40 px-3.5 py-2 rounded-xl text-cyan-300 text-xs font-bold font-mono";
+        const headerBadge = document.getElementById("step2HeaderBadge");
+        if (headerBadge) headerBadge.className = "flex items-center justify-between bg-cyan-950/40 border border-cyan-500/40 px-3.5 py-2 rounded-xl text-cyan-300 text-xs font-bold font-mono";
                 
-                const dot = document.getElementById("step2Dot");
-                if (dot) dot.className = "w-2 h-2 rounded-full bg-cyan-400";
+        const dot = document.getElementById("step2Dot");
+        if (dot) dot.className = "w-2 h-2 rounded-full bg-cyan-400";
 
-                const status = document.getElementById("step2Status");
-                if (status) status.innerText = `${data.graph.edges.length} Transfers Traced`;
+        const status = document.getElementById("step2Status");
+        if (status) {
+            const events = data.trace_provenance?.source_events || [];
+            const providerFailed = events.some(event => event.status === "FAILED");
+            status.innerText = providerFailed
+                ? `${data.trace_provenance?.data_mode || traceMode} • Provider retrieval issue — ${data.graph.edges.length} confirmed transfers`
+                : `${data.trace_provenance?.data_mode || traceMode} • ${data.graph.edges.length} Transfers Traced`;
+        }
+
+                // A large live graph must not prevent the completed evidence
+                // result and attribution status from being displayed.
+        try {
+            renderGraphData(data.graph.nodes || [], data.graph.edges || []);
+        } catch (graphError) {
+            console.error("Graph rendering error:", graphError);
+            if (status) status.innerText = `${data.trace_provenance?.data_mode || traceMode} • ${data.graph.edges.length} transfers retrieved; graph rendering needs review`;
+        }
 
                 // Update Explainable VASP Attribution Card
-                renderAttribution(data.attribution, data.case_metadata.chain);
+        renderAttribution(data.attribution, data.case_metadata.chain);
+        renderActionEligibility(data.action_eligibility, data.suggested_lawful_action);
 
                 // Update Cross-Case Intelligence Alert Banner
-                renderCrossCaseAlert(data.cross_case_alert);
+        renderCrossCaseAlert(data.cross_case_alert);
 
                 // Update Evidence Hash Stamp
-                renderEvidenceSeal(data.evidence_seal);
+        renderEvidenceSeal(data.evidence_seal);
+        renderTraceManifest(data.trace_manifest);
 
-                if (btn) btn.disabled = false;
-            }, 250);
-        }, 800);
+        if (btn) btn.disabled = false;
 
     } catch (err) {
         console.error("Error executing trace:", err);
         if (terminal) terminal.classList.add("hidden");
         if (btn) btn.disabled = false;
-        alert("Trace Error: " + err.message);
+        const message = err.name === "AbortError"
+            ? "The live providers did not respond within 28 seconds. Check the provider/network connection, then try again."
+            : err.message;
+        alert("Trace Error: " + message);
+    } finally {
+        if (requestDeadline) clearTimeout(requestDeadline);
+    }
+}
+
+async function waitForLiveTrace(jobId, step) {
+    for (;;) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const response = await fetch(`/api/trace/jobs/${encodeURIComponent(jobId)}`);
+        const job = await response.json();
+        if (!response.ok) throw new Error(job.detail || "Unable to read live trace status.");
+        if (job.status === "COMPLETED") return job.result;
+        if (job.status === "FAILED") throw new Error(job.error || "Live trace failed.");
+        if (step) step.innerText = `⚡ Live provider scan ${job.status.toLowerCase()} — evidence job ${jobId}`;
+    }
+}
+
+function renderTraceManifest(manifest) {
+    const runDisplay = document.getElementById("traceRunIdDisplay");
+    if (runDisplay) runDisplay.innerText = manifest?.investigation_run_id || "Not saved";
+}
+
+async function verifySavedEvidenceRun() {
+    const runId = state.traceData?.trace_manifest?.investigation_run_id;
+    if (!runId) {
+        alert("Run a trace first to create an evidence record.");
+        return;
+    }
+    try {
+        const response = await fetch(`/api/evidence/runs/${encodeURIComponent(runId)}/verify`, { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "Verification failed");
+        alert(result.is_valid
+            ? `Evidence run verified. ${result.transaction_count} recorded transfers are unchanged.`
+            : "Evidence run verification failed. Do not rely on this export until it is reviewed.");
+    } catch (error) {
+        alert("Run verification error: " + error.message);
+    }
+}
+
+async function exportEvidencePackage() {
+    const runId = state.traceData?.trace_manifest?.investigation_run_id;
+    if (!runId) {
+        alert("Run a trace first to create an evidence package.");
+        return;
+    }
+    try {
+        const response = await fetch(`/api/evidence/runs/${encodeURIComponent(runId)}/export`);
+        const packageData = await response.json();
+        if (!response.ok) throw new Error(packageData.detail || "Export failed");
+        const blob = new Blob([JSON.stringify(packageData, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${runId}_evidence_package.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        alert("Evidence export error: " + error.message);
     }
 }
 
 // Render Explainable Attribution Section
 function renderAttribution(attr, chainName) {
     if (!attr) return;
+    const observedLead = (attr.observed_unqualified_candidates || [])[0];
     const vaspConf = document.getElementById("vaspConfidenceValue");
     if (vaspConf) vaspConf.innerText = `${attr.confidence_score}%`;
 
@@ -349,7 +442,23 @@ function renderAttribution(attr, chainName) {
     if (vaspName) vaspName.innerText = attr.primary_vasp ? attr.primary_vasp.vasp_name : "Unknown VASP";
 
     const vaspChain = document.getElementById("vaspChainDisplay");
-    if (vaspChain) vaspChain.innerText = `Blockchain: ${chainName} • Distance: ${attr.total_hops} Transfers away`;
+    if (vaspChain) {
+        vaspChain.innerText = attr.confidence_score > 0
+            ? `Blockchain: ${chainName} • Distance: ${attr.total_hops} Transfers away`
+            : `Blockchain: ${chainName} • Examined scope: ${attr.total_hops} confirmed transfers`;
+    }
+
+    // Do not silently hide a labelled exchange that fell below the evidence
+    // threshold.  It is an investigative lead, not an attribution.
+    const existingLead = document.getElementById("observedVaspLead");
+    if (existingLead) existingLead.remove();
+    if (observedLead && vaspChain) {
+        const lead = document.createElement("div");
+        lead.id = "observedVaspLead";
+        lead.className = "mt-3 p-2.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-[11px] text-amber-200 font-mono";
+        lead.innerHTML = `<span class="font-bold">OBSERVED LEAD — NOT ATTRIBUTED:</span> ${observedLead.vasp_name} scored ${observedLead.confidence_score}% (below the 40% qualification threshold). No preservation or disclosure request is available on this lead alone.`;
+        vaspChain.parentElement.parentElement.appendChild(lead);
+    }
     
     // FIU Badge
     const fiuBadge = document.getElementById("fiuBadge");
@@ -468,6 +577,36 @@ function renderAttribution(attr, chainName) {
     }
 }
 
+function renderActionEligibility(eligibility, suggestedAction) {
+    const banner = document.getElementById("actionEligibilityBanner");
+    const actionBadge = document.getElementById("recommendedActionBadge");
+    const actionText = document.getElementById("recommendedActionText");
+    const sahyogButton = document.getElementById("btnSahyog");
+    const eligible = Boolean(eligibility?.eligible_for_dispatch);
+    const scope = eligibility?.examined_hop_scope || 0;
+    const reason = eligibility?.reason || "Evidence eligibility was not returned.";
+
+    if (banner) {
+        banner.className = eligible
+            ? "mt-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/40 text-xs font-mono text-emerald-200"
+            : "mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/40 text-xs font-mono text-amber-100";
+        banner.innerText = eligible
+            ? `VERIFIED VASP REACHED — REVIEW REQUIRED. ${reason}`
+            : `UNRESOLVED WITHIN ${scope}-HOP EVIDENCE SCOPE — DEEP TRACE REQUIRED. ${reason}`;
+    }
+    if (actionBadge) actionBadge.innerText = eligible ? "🟢 Reviewable Draft" : "🟠 Deep Trace Required";
+    if (actionText) actionText.innerText = eligible
+        ? "A connected verified VASP endpoint was found. An investigator may review the draft; no action is automatic."
+        : "No VASP freeze or disclosure draft is available. Preserve evidence and expand only the highest-priority unresolved branches.";
+    if (sahyogButton) {
+        sahyogButton.disabled = !eligible;
+        sahyogButton.className = eligible
+            ? "py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow text-center flex items-center justify-center gap-1.5 cursor-pointer"
+            : "py-2.5 px-2 rounded-xl bg-slate-700 text-slate-400 font-bold text-xs shadow text-center flex items-center justify-center gap-1.5 cursor-not-allowed disabled:opacity-70";
+        sahyogButton.title = eligible ? "Open reviewable SAHYOG draft" : "Blocked until a verified VASP endpoint meets the evidence threshold";
+    }
+}
+
 // Render Cross-Case Intelligence Alert Banner
 function renderCrossCaseAlert(alert) {
     const alertBox = document.getElementById("crossCaseAlertBox");
@@ -529,6 +668,11 @@ function openSahyogModal() {
         return;
     }
 
+    if (!state.traceData.action_eligibility?.eligible_for_dispatch) {
+        alert("SAHYOG dispatch is blocked: no connected, verified VASP endpoint met the evidence threshold. Preserve the evidence and expand the trace.");
+        return;
+    }
+
     const req = state.traceData.sahyog_request;
     const caseMeta = state.traceData.case_metadata;
 
@@ -567,14 +711,15 @@ async function dispatchSahyog() {
             body: JSON.stringify(state.traceData.sahyog_request)
         });
         const result = await res.json();
+        if (!res.ok) throw new Error(result.detail || "Dispatch was blocked by the evidence gate.");
 
         const statusBox = document.getElementById("sahyogDispatchStatusBox");
         statusBox.classList.remove("hidden");
         document.getElementById("sahyogReceiptToken").innerText = result.sahyog_receipt_token;
         document.getElementById("sahyogVaspTicket").innerText = result.vasp_acknowledgment.compliance_ticket_id;
-        document.getElementById("sahyogVaspAction").innerText = "Account placed on 72-hour freeze by Exchange";
+        document.getElementById("sahyogVaspAction").innerText = "Draft received by the simulated nodal desk; legal authorization remains required.";
 
-        btn.innerHTML = `✅ Notice Submitted & Account Frozen in Escrow`;
+        btn.innerHTML = `✅ Draft Submitted for Legal Review`;
     } catch (err) {
         console.error("Dispatch failed", err);
         btn.disabled = false;
@@ -745,4 +890,3 @@ async function simulate1930NCRPWebhook() {
         triggerTrace();
     }, 300);
 }
-

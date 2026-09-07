@@ -399,7 +399,6 @@ class AttributionEngine:
 
         # No qualifying VASP found — return explicit no-match
         if selected is None:
-            fallback_vasp = list(self.known_vasps.values())[0]
             primary_candidate = VASPCandidate(
                 vasp_name="No qualifying VASP endpoint found within max_hops",
                 confidence_score=0.0,
@@ -411,13 +410,31 @@ class AttributionEngine:
                 fiu_ind_registered=False,
                 nodal_email=""
             )
+            observed = []
+            for rank, candidate in enumerate(additional[:3], start=1):
+                info = candidate["vasp_info"]
+                observed.append(VASPCandidate(
+                    vasp_name=candidate["vasp_name"],
+                    confidence_score=candidate["score"],
+                    rank=rank,
+                    matched_cluster_id=f"{candidate['vasp_id']}-OBSERVED",
+                    deposit_address=candidate["deposit_address"],
+                    sweep_tx_hash=candidate["tx_hash"],
+                    jurisdiction=info.get("country", "Unknown"),
+                    fiu_ind_registered=info.get("fiu_ind_registered", False),
+                    nodal_email=info.get("compliance_nodal_email", "")
+                ))
             return AttributionResult(
                 primary_vasp=primary_candidate,
                 candidates=[primary_candidate],
+                observed_unqualified_candidates=observed,
                 confidence_score=0.0,
                 confidence_level="LOW",
                 explainability=[],
-                total_hops=len(hop_records),
+                # ``hop_records`` is a list of transfers, not a hop count.
+                # Reporting its length as distance made a 4-hop trace appear
+                # as “76 transfers away”.
+                total_hops=max((record.get("hop_number", 0) for record in hop_records), default=0),
                 total_volume_tracked=total_value,
                 volume_to_vasp=0.0,
                 flow_percentage=0.0,

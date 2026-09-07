@@ -16,6 +16,10 @@ class NormalizedTransaction(BaseModel):
     timestamp: str
     block_height: Optional[int] = None
     is_demo_synthetic: bool = True    # Always True in demo mode
+    chain: str = "Unknown"
+    source_provider: str = "SyntheticDemoProvider"
+    retrieved_at: str = ""
+    response_sha256: str = ""
 
 class AddressLabel(BaseModel):
     """Intelligence label resolved for a blockchain address."""
@@ -89,6 +93,9 @@ class VASPCandidate(BaseModel):
 class AttributionResult(BaseModel):
     primary_vasp: VASPCandidate
     candidates: List[VASPCandidate]
+    # Labels that were observed on a reachable path but did not meet the
+    # attribution threshold.  These are leads, never a basis for action.
+    observed_unqualified_candidates: List[VASPCandidate] = []
     confidence_score: float
     confidence_level: str  # HIGH, MEDIUM, LOW
     explainability: List[ExplainabilityFactor]
@@ -124,6 +131,9 @@ class SahyogRequest(BaseModel):
     status: str  # DRAFT, DISPATCHED, ACKNOWLEDGED, ASSETS_FROZEN
     timestamp: str
     dispatch_receipt_hash: Optional[str] = None
+    eligible_for_dispatch: bool = False
+    eligibility_reason: str = "Requires evidence review"
+    investigation_run_id: Optional[str] = None
 
 class ForensicReport(BaseModel):
     report_id: str

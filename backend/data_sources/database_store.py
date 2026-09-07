@@ -60,6 +60,24 @@ class CCTNSDatabaseStore:
             )
         ''')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS investigation_runs (
+                run_id TEXT PRIMARY KEY, case_id TEXT NOT NULL, data_mode TEXT NOT NULL,
+                chain TEXT NOT NULL, suspect_wallet TEXT NOT NULL, manifest_hash TEXT NOT NULL,
+                provenance_json TEXT NOT NULL, attribution_json TEXT NOT NULL, created_at TEXT NOT NULL
+            )
+        ''')
+        columns = {row[1] for row in cursor.execute("PRAGMA table_info(investigation_runs)").fetchall()}
+        if "manifest_json" not in columns:
+            cursor.execute("ALTER TABLE investigation_runs ADD COLUMN manifest_json TEXT NOT NULL DEFAULT '{}'")
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS trace_transactions (
+                run_id TEXT NOT NULL, tx_hash TEXT NOT NULL, source_address TEXT NOT NULL,
+                target_address TEXT NOT NULL, amount REAL NOT NULL, token TEXT NOT NULL,
+                block_timestamp TEXT, source_provider TEXT, PRIMARY KEY (run_id, tx_hash, source_address, target_address)
+            )
+        ''')
+
         conn.commit()
         conn.close()
 
@@ -69,7 +87,7 @@ class CCTNSDatabaseStore:
                 "name": "PostgreSQL CCTNS Relational Store (SQLAlchemy ORM)",
                 "engine": "PostgreSQL 16 / Enterprise Relational Engine" if self.is_postgres else "Embedded High-Reliability CCTNS SQLite Store",
                 "connection": "ACTIVE",
-                "tables_indexed": ["cctns_cases", "syndicate_registry", "evidence_audit_logs", "vasp_directory"],
+                "tables_indexed": ["cctns_cases", "syndicate_registry", "evidence_audit_logs", "investigation_runs", "trace_transactions", "vasp_directory"],
                 "pmla_audit_ready": True
             }
         }
@@ -98,3 +116,41 @@ class CCTNSDatabaseStore:
             conn.close()
         except Exception as e:
             print(f"Database save error: {e}")
+
+    def save_trace_run(self, manifest: Dict[str, Any], case_data: Dict[str, Any], provenance: Dict[str, Any], attribution: Dict[str, Any]) -> None:
+        """Persist the immutable inputs needed to independently audit one trace run."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute('''INSERT INTO investigation_runs
+                (run_id, case_id, data_mode, chain, suspect_wallet, manifest_hash, provenance_json, attribution_json, created_at, manifest_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (
+                manifest["investigation_run_id"], case_data.get("case_id", "CASE-NEW"), provenance.get("data_mode", "DEMO"),
+                case_data.get("chain", "Unknown"), case_data.get("suspect_wallet", ""), manifest["sha256_hash"],
+                json.dumps(provenance, sort_keys=True), json.dumps(attribution, sort_keys=True), datetime.utcnow().isoformat(), json.dumps(manifest["payload"], sort_keys=True)))
+            for edge in case_data.get("edges", []):
+                cursor.execute('''INSERT OR IGNORE INTO trace_transactions
+                    (run_id, tx_hash, source_address, target_address, amount, token, block_timestamp, source_provider)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', (
+                    manifest["investigation_run_id"], edge.get("tx_hash", ""), edge.get("source", ""), edge.get("target", ""),
+                    float(edge.get("amount", 0)), edge.get("token", ""), edge.get("timestamp", ""), edge.get("notes", "")))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_trace_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute("SELECT * FROM investigation_runs WHERE run_id = ?", (run_id,)).fetchone()
+            if not row:
+                return None
+            result = dict(row)
+            result["provenance"] = json.loads(result.pop("provenance_json"))
+            result["attribution"] = json.loads(result.pop("attribution_json"))
+            result["manifest_payload"] = json.loads(result.pop("manifest_json"))
+            txs = conn.execute("SELECT tx_hash, source_address, target_address, amount, token, block_timestamp, source_provider FROM trace_transactions WHERE run_id = ? ORDER BY rowid", (run_id,)).fetchall()
+            result["transactions"] = [dict(tx) for tx in txs]
+            return result
+        finally:
+            conn.close()
