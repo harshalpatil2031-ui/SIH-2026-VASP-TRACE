@@ -371,12 +371,13 @@ def generate_custom_trace(wallet_address: str, chain: str = "Ethereum", max_hops
     total_amount = 2500.0
     current_amount = total_amount
     
-    # 2. Mule Intermediaries
-    for h in range(1, max_hops):
+    # 2. Intermediary Mule Chain (max_hops - 2 mules)
+    mule_count = max(1, max_hops - 2)
+    for h in range(1, mule_count + 1):
         mule_addr = _generate_chain_address(f"{wallet_address}_mule_{h}", chain)
         nodes.append({
             "id": mule_addr,
-            "label": f"Mule Wallet {h} ({mule_addr[:6]}...{mule_addr[-4:]})",
+            "label": f"Intermediary Mule #{h}",
             "type": "mule",
             "chain": chain,
             "balance": f"2 {token_name}",
@@ -395,7 +396,7 @@ def generate_custom_trace(wallet_address: str, chain: str = "Ethereum", max_hops
             "target": mule_addr,
             "amount": tx_amt,
             "token": token_name,
-            "tx_hash": _generate_chain_address(f"tx_{current_source}_{mule_addr}", chain)[:18] + "...",
+            "tx_hash": f"SIM-{hashlib.md5(f'tx_{current_source}_{mule_addr}'.encode()).hexdigest()[:8].upper()}",
             "timestamp": f"Step {h}",
             "hop": h,
             "is_sweep": False,
@@ -426,50 +427,21 @@ def generate_custom_trace(wallet_address: str, chain: str = "Ethereum", max_hops
         "target": deposit_addr,
         "amount": round(current_amount * 0.98, 2),
         "token": token_name,
-        "tx_hash": _generate_chain_address(f"tx_{current_source}_{deposit_addr}", chain)[:18] + "...",
+        "tx_hash": f"SIM-{hashlib.md5(f'tx_{current_source}_{deposit_addr}'.encode()).hexdigest()[:8].upper()}",
         "timestamp": "Deposit Step",
-        "hop": max_hops,
+        "hop": max_hops - 1 if max_hops > 1 else 1,
         "is_sweep": False,
         "notes": f"Deposited into {selected_vasp['name']}"
     })
     
-    # 4. Exchange Main Wallet
-    vasp_hot_addr = _generate_chain_address(f"{selected_vasp['name']}_hot_vault", chain) if "solana" in chain.lower() or "tron" in chain.lower() else selected_vasp["hot_wallet_patterns"][0]
-    nodes.append({
-        "id": vasp_hot_addr,
-        "label": f"{selected_vasp['name']}",
-        "type": "vasp_hot",
-        "chain": chain,
-        "balance": f"25M {token_name}",
-        "risk_score": 10,
-        "risk_level": "LOW",
-        "entity_name": f"{selected_vasp['name']} Main Custody",
-        "tags": ["Verified Hot Vault", f"FIU-IND Verified {chain} Pool"],
-        "case_ids": ["LIVE-QUERY"],
-        "is_shared": False
-    })
-    
-    edges.append({
-        "id": "e_live_deposit",
-        "source": current_source,
-        "target": deposit_addr,
-        "amount": round(current_amount * 0.98, 2),
-        "token": "USDT",
-        "tx_hash": "0x" + hashlib.sha256(f"tx_{current_source}_{deposit_addr}".encode()).hexdigest()[:16] + "...",
-        "timestamp": "Deposit Step",
-        "hop": max_hops,
-        "is_sweep": False,
-        "notes": f"Deposited into {selected_vasp['name']}"
-    })
-    
-    # 4. Exchange Main Wallet
+    # 4. Exchange Main Hot Wallet (At max_hops)
     vasp_hot_addr = selected_vasp["hot_wallet_patterns"][0]
     nodes.append({
         "id": vasp_hot_addr,
         "label": f"{selected_vasp['name']}",
         "type": "vasp_hot",
         "chain": chain,
-        "balance": "25M USDT",
+        "balance": f"25M {token_name}",
         "risk_score": 10,
         "risk_level": "LOW",
         "entity_name": f"{selected_vasp['name']} Main Wallet",
@@ -483,10 +455,10 @@ def generate_custom_trace(wallet_address: str, chain: str = "Ethereum", max_hops
         "source": deposit_addr,
         "target": vasp_hot_addr,
         "amount": round(current_amount * 0.98, 2),
-        "token": "USDT",
-        "tx_hash": "0x" + hashlib.sha256(f"tx_sweep_{deposit_addr}".encode()).hexdigest()[:16] + "...",
+        "token": token_name,
+        "tx_hash": f"SIM-{hashlib.md5(f'tx_sweep_{deposit_addr}'.encode()).hexdigest()[:8].upper()}",
         "timestamp": "Consolidation",
-        "hop": max_hops + 1,
+        "hop": max_hops,
         "is_sweep": True,
         "notes": "Moved into exchange main wallet"
     })
