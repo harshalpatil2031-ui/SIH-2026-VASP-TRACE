@@ -63,6 +63,7 @@ function goToScreen(screen) {
         sLogin.classList.remove("hidden");
     } else if (screen === "DASHBOARD") {
         sDash.classList.remove("hidden");
+        loadMyDashboard();
     } else if (screen === "ANALYSIS") {
         sAnalysis.classList.remove("hidden");
         // Ensure Cytoscape container is initialized after DOM is visible
@@ -76,6 +77,77 @@ function goToScreen(screen) {
     }
 }
 
+// Load dynamic dashboard metrics and case dockets from SQLite cctns_forensics.db
+async function loadMyDashboard() {
+    try {
+        const res = await fetch("/api/dashboard/my-cases");
+        if (!res.ok) {
+            console.error("Failed to load dashboard cases:", res.status);
+            return;
+        }
+        const data = await res.json();
+        const metrics = data.metrics || {};
+        const cases = data.cases || [];
+
+        // 1. Populate KPI Cards
+        const kpiActive = document.getElementById("kpiActiveCases");
+        if (kpiActive) kpiActive.innerText = `${metrics.active_cases ?? 0} Cases`;
+
+        const kpiVasps = document.getElementById("kpiVaspsIdentified");
+        if (kpiVasps) kpiVasps.innerText = `${metrics.vasps_identified ?? 0} Pinpointed`;
+
+        const kpiHolds = document.getElementById("kpiAssetHolds");
+        if (kpiHolds) kpiHolds.innerText = `${metrics.active_holds ?? 0} Active`;
+
+        const kpiSynd = document.getElementById("kpiSyndicates");
+        if (kpiSynd) kpiSynd.innerText = `${metrics.syndicates_linked ?? 0} Linked`;
+
+        // Update badge count
+        const badge = document.getElementById("dashCaseCountBadge");
+        if (badge) badge.innerText = `${cases.length} Records`;
+
+        // 2. Populate Cases Table
+        const tbody = document.getElementById("dashCaseTableBody");
+        if (tbody) {
+            tbody.innerHTML = "";
+            if (cases.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-6 text-center text-slate-500 font-sans">No active case dockets found.</td></tr>`;
+                return;
+            }
+            cases.forEach((c, idx) => {
+                const tr = document.createElement("tr");
+                tr.className = `case-row-hover transition-colors ${idx === 0 ? 'bg-cyan-950/10' : ''}`;
+                
+                const amountFormatted = Number(c.amount_inr || 0).toLocaleString();
+                const walletShort = c.suspect_wallet ? `${c.suspect_wallet.slice(0, 6)}...${c.suspect_wallet.slice(-4)}` : '';
+                
+                tr.innerHTML = `
+                    <td class="p-3.5">
+                        <div class="font-bold text-cyan-300">${c.case_id}</div>
+                        <div class="text-[10px] text-slate-400">${c.fir_number || ''}</div>
+                    </td>
+                    <td class="p-3.5 font-sans">
+                        <div class="font-bold text-slate-200">${c.title || 'Cybercrime Fraud Investigation'}</div>
+                        <div class="text-[10px] text-slate-400 font-mono">${c.chain || 'TRON / EVM'}</div>
+                    </td>
+                    <td class="p-3.5">
+                        <div class="font-bold text-rose-400">₹${amountFormatted}</div>
+                        <div class="text-[10px] text-slate-400 font-mono" title="${c.suspect_wallet || ''}">${walletShort}</div>
+                    </td>
+                    <td class="p-3.5 text-right">
+                        <button onclick="openCaseInWorkbench('${c.case_id}')" class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-black text-xs shadow cursor-pointer transition-all active:scale-95">
+                            Analyze ➔
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+    } catch (err) {
+        console.error("Error loading dashboard data:", err);
+    }
+}
+
 // Launch Analysis from Screen 2 (Create New Case Form)
 async function launchAnalysisFromDashboard() {
     const fir = document.getElementById("dashFIR").value.trim();
@@ -84,6 +156,8 @@ async function launchAnalysisFromDashboard() {
     const amount = parseInt(document.getElementById("dashAmount").value) || 180000;
     const notes = document.getElementById("dashNotes").value.trim();
 
+
+    let createdCaseId = null;
     try {
         const createRes = await fetch("/api/cases/create", {
             method: "POST",
@@ -103,17 +177,16 @@ async function launchAnalysisFromDashboard() {
         }
         const createData = await createRes.json();
         if (createData && createData.case_id) {
-            state.currentCaseId = createData.case_id;
-        } else {
-            state.currentCaseId = (wallet.startsWith("TJ9k") ? "CASE-147" : (wallet.startsWith("0x48") ? "CASE-101" : "CUSTOM"));
+            createdCaseId = createData.case_id;
         }
+        // Refresh dashboard so Active Cases count increments and new case appears at top
+        await loadMyDashboard();
     } catch (e) {
         console.warn("Case creation error:", e);
         if (e.message && e.message.includes("Invalid")) {
             alert("⚠️ " + e.message);
             return;
         }
-        state.currentCaseId = (wallet.startsWith("TJ9k") ? "CASE-147" : (wallet.startsWith("0x48") ? "CASE-101" : "CUSTOM"));
     }
 
     // Populate Screen 3 Workbench
@@ -122,6 +195,9 @@ async function launchAnalysisFromDashboard() {
     document.getElementById("selectChain").value = chain;
     document.getElementById("caseHeaderAmount").innerText = `₹${amount.toLocaleString()}`;
     document.getElementById("caseNotes").innerText = notes;
+
+
+    state.currentCaseId = createdCaseId || (wallet.startsWith("TJ9k") ? "CASE-147" : (wallet.startsWith("0x48") ? "CASE-101" : "CUSTOM"));
 
     // Switch to Screen 3 and run trace
     goToScreen("ANALYSIS");

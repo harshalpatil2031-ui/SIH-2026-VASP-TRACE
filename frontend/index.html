@@ -109,36 +109,36 @@
                 <!-- KPI 1 -->
                 <div class="glass-card rounded-2xl p-5 border border-slate-800 relative overflow-hidden">
                     <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 to-amber-500"></div>
-                    <div class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Active Crypto FIRs</div>
-                    <div class="text-3xl font-black text-white font-mono my-1">14 Cases</div>
+                    <div class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Active Case Dockets</div>
+                    <div id="kpiActiveCases" class="text-3xl font-black text-white font-mono my-1">--</div>
                     <div class="text-xs text-rose-400 font-medium mt-2 flex items-center gap-1.5">
                         <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
-                        3 Urgent Pending Freezing
+                        Live CCTNS Records
                     </div>
                 </div>
 
                 <!-- KPI 2 -->
                 <div class="glass-card rounded-2xl p-5 border border-slate-800 relative overflow-hidden">
                     <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-500 to-blue-500"></div>
-                    <div class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Total Stolen Tracked</div>
-                    <div class="text-3xl font-black text-cyan-300 font-mono my-1">₹24,80,000</div>
-                    <div class="text-xs text-slate-400 font-mono mt-2">USDT (TRC-20 & ERC-20) / BTC</div>
+                    <div class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Target VASPs Pinpointed</div>
+                    <div id="kpiVaspsIdentified" class="text-3xl font-black text-cyan-300 font-mono my-1">--</div>
+                    <div class="text-xs text-slate-400 font-mono mt-2">Attributed Exchanges</div>
                 </div>
 
                 <!-- KPI 3 -->
                 <div class="glass-card rounded-2xl p-5 border border-slate-800 relative overflow-hidden">
                     <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500"></div>
-                    <div class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">SAHYOG Notices Sent</div>
-                    <div class="text-3xl font-black text-emerald-400 font-mono my-1">9 Notices</div>
-                    <div class="text-xs text-emerald-400 font-medium mt-2">100% Exchange Acknowledgement</div>
+                    <div class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">72-Hr Asset Holds BNSS 106</div>
+                    <div id="kpiAssetHolds" class="text-3xl font-black text-emerald-400 font-mono my-1">--</div>
+                    <div class="text-xs text-emerald-400 font-medium mt-2">Emergency Freeze Notices</div>
                 </div>
 
                 <!-- KPI 4 -->
                 <div class="glass-card rounded-2xl p-5 border border-slate-800 relative overflow-hidden">
                     <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 to-rose-500"></div>
-                    <div class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Cross-Case Syndicates</div>
-                    <div class="text-3xl font-black text-amber-400 font-mono my-1">2 Linked</div>
-                    <div class="text-xs text-amber-400 font-medium mt-2">Shared interstate middleman wallets</div>
+                    <div class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">Interstate Syndicate Links</div>
+                    <div id="kpiSyndicates" class="text-3xl font-black text-amber-400 font-mono my-1">--</div>
+                    <div class="text-xs text-amber-400 font-medium mt-2">Shared Mule & Intermediary Wallets</div>
                 </div>
             </div>
 
@@ -200,9 +200,9 @@
                     <div>
                         <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-3">
                             <span class="text-sm font-bold text-slate-200 uppercase flex items-center gap-2 font-mono">
-                                📁 Previous Case Investigations (FIR Registry)
+                                📁 My Active Case Dockets (CCTNS Database)
                             </span>
-                            <span class="text-xs text-slate-400 font-mono">3 Records</span>
+                            <span id="dashCaseCountBadge" class="text-xs text-slate-400 font-mono">-- Records</span>
                         </div>
 
                         <div class="overflow-x-auto">
@@ -215,69 +215,7 @@
                                         <th class="p-3 text-right">Action</th>
                                     </tr>
                                 </thead>
-                                <tbody class="divide-y divide-slate-800/60 font-mono">
-                                    
-                                    <!-- Case #147 -->
-                                    <tr class="case-row-hover transition-colors bg-cyan-950/10">
-                                        <td class="p-3.5">
-                                            <div class="font-bold text-cyan-300">Case #147</div>
-                                            <div class="text-[10px] text-slate-400">FIR/CY-HYD/304</div>
-                                        </td>
-                                        <td class="p-3.5 font-sans">
-                                            <div class="font-bold text-slate-200">Loan App Extortion</div>
-                                            <div class="text-[10px] text-slate-400 font-mono">TRON (TRC-20)</div>
-                                        </td>
-                                        <td class="p-3.5">
-                                            <div class="font-bold text-rose-400">₹1,80,000</div>
-                                            <div class="text-[10px] text-slate-400">2,160 USDT</div>
-                                        </td>
-                                        <td class="p-3.5 text-right">
-                                            <button onclick="openCaseInWorkbench('CASE-147')" class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-500 text-slate-950 font-black text-xs shadow cursor-pointer">
-                                                Analyze ➔
-                                            </button>
-                                        </td>
-                                    </tr>
-
-                                    <!-- Case #101 -->
-                                    <tr class="case-row-hover transition-colors">
-                                        <td class="p-3.5">
-                                            <div class="font-bold text-cyan-300">Case #101</div>
-                                            <div class="text-[10px] text-slate-400">FIR/MUM-CY/892</div>
-                                        </td>
-                                        <td class="p-3.5 font-sans">
-                                            <div class="font-bold text-slate-200">Telegram Task Scam</div>
-                                            <div class="text-[10px] text-slate-400 font-mono">Ethereum (ERC-20)</div>
-                                        </td>
-                                        <td class="p-3.5">
-                                            <div class="font-bold text-rose-400">₹50,000</div>
-                                            <div class="text-[10px] text-slate-400">600 USDT</div>
-                                        </td>
-                                        <td class="p-3.5 text-right">
-                                            <button onclick="openCaseInWorkbench('CASE-101')" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 cursor-pointer">
-                                                Analyze ➔
-                                            </button>
-                                        </td>
-                                    </tr>
-
-                                    <!-- Case #088 -->
-                                    <tr class="case-row-hover transition-colors opacity-70">
-                                        <td class="p-3.5">
-                                            <div class="font-bold text-slate-400">Case #088</div>
-                                            <div class="text-[10px] text-slate-500">FIR/BLR-CY/112</div>
-                                        </td>
-                                        <td class="p-3.5 font-sans">
-                                            <div class="font-bold text-slate-300">AI Trading Bot Scam</div>
-                                            <div class="text-[10px] text-slate-500 font-mono">Bitcoin (BTC)</div>
-                                        </td>
-                                        <td class="p-3.5">
-                                            <div class="font-bold text-slate-400">₹3,20,000</div>
-                                            <div class="text-[10px] text-slate-500">0.05 BTC</div>
-                                        </td>
-                                        <td class="p-3.5 text-right">
-                                            <span class="text-[10px] font-bold text-emerald-400">✓ Resolved</span>
-                                        </td>
-                                    </tr>
-
+                                <tbody id="dashCaseTableBody" class="divide-y divide-slate-800/60 font-mono">
                                 </tbody>
                             </table>
                         </div>
