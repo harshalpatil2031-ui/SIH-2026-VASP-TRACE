@@ -38,6 +38,13 @@ class CCTNSDatabaseStore:
                 created_at TEXT NOT NULL
             )
         ''')
+        case_columns = {row[1] for row in cursor.execute("PRAGMA table_info(cctns_cases)").fetchall()}
+        for column, definition in (
+            ("title", "TEXT"), ("incident_date", "TEXT"), ("amount_inr", "REAL"),
+            ("token", "TEXT DEFAULT 'USDT'"), ("notes", "TEXT"),
+        ):
+            if column not in case_columns:
+                cursor.execute(f"ALTER TABLE cctns_cases ADD COLUMN {column} {definition}")
 
         # 2. Syndicate Shared Infrastructure Table
         cursor.execute('''
@@ -70,6 +77,12 @@ class CCTNSDatabaseStore:
         columns = {row[1] for row in cursor.execute("PRAGMA table_info(investigation_runs)").fetchall()}
         if "manifest_json" not in columns:
             cursor.execute("ALTER TABLE investigation_runs ADD COLUMN manifest_json TEXT NOT NULL DEFAULT '{}'")
+        for column, definition in (
+            ("attributed_vasp", "TEXT"), ("confidence_score", "REAL DEFAULT 0"),
+            ("hold_active", "INTEGER DEFAULT 0"),
+        ):
+            if column not in columns:
+                cursor.execute(f"ALTER TABLE investigation_runs ADD COLUMN {column} {definition}")
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS trace_transactions (
                 run_id TEXT NOT NULL, tx_hash TEXT NOT NULL, source_address TEXT NOT NULL,
@@ -98,17 +111,30 @@ class CCTNSDatabaseStore:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT OR REPLACE INTO cctns_cases 
-                (case_id, fir_number, police_station, investigating_officer, stolen_amount_inr, chain, suspect_wallet, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO cctns_cases
+                (case_id, fir_number, title, police_station, investigating_officer, incident_date,
+                 amount_inr, stolen_amount_inr, chain, suspect_wallet, token, notes, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(case_id) DO UPDATE SET
+                    fir_number=excluded.fir_number, title=excluded.title,
+                    police_station=excluded.police_station, investigating_officer=excluded.investigating_officer,
+                    incident_date=excluded.incident_date, amount_inr=excluded.amount_inr,
+                    stolen_amount_inr=excluded.stolen_amount_inr, chain=excluded.chain,
+                    suspect_wallet=excluded.suspect_wallet, token=excluded.token, notes=excluded.notes,
+                    status=excluded.status
             ''', (
                 case_data.get("case_id", "CASE-NEW"),
                 case_data.get("fir_number", "FIR/2026/CY/001"),
+                case_data.get("title", "Cybercrime Fraud Investigation"),
                 case_data.get("police_station", "Cyber Crime Unit"),
                 case_data.get("investigating_officer", "Investigating Officer"),
+                case_data.get("incident_date", datetime.utcnow().date().isoformat()),
+                float(case_data.get("amount_inr", 100000.0)),
                 float(case_data.get("amount_inr", 100000.0)),
                 case_data.get("chain", "TRON"),
                 case_data.get("suspect_wallet", ""),
+                case_data.get("token", "USDT"),
+                case_data.get("notes", ""),
                 "ACTIVE",
                 datetime.utcnow().isoformat()
             ))
@@ -122,12 +148,14 @@ class CCTNSDatabaseStore:
         conn = sqlite3.connect(self.db_path)
         try:
             cursor = conn.cursor()
+            primary_vasp = attribution.get("primary_vasp", {})
             cursor.execute('''INSERT INTO investigation_runs
-                (run_id, case_id, data_mode, chain, suspect_wallet, manifest_hash, provenance_json, attribution_json, created_at, manifest_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (
+                (run_id, case_id, data_mode, chain, suspect_wallet, manifest_hash, provenance_json, attribution_json, created_at, manifest_json, attributed_vasp, confidence_score, hold_active)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (
                 manifest["investigation_run_id"], case_data.get("case_id", "CASE-NEW"), provenance.get("data_mode", "DEMO"),
                 case_data.get("chain", "Unknown"), case_data.get("suspect_wallet", ""), manifest["sha256_hash"],
-                json.dumps(provenance, sort_keys=True), json.dumps(attribution, sort_keys=True), datetime.utcnow().isoformat(), json.dumps(manifest["payload"], sort_keys=True)))
+                json.dumps(provenance, sort_keys=True), json.dumps(attribution, sort_keys=True), datetime.utcnow().isoformat(), json.dumps(manifest["payload"], sort_keys=True),
+                primary_vasp.get("vasp_name") or None, float(attribution.get("confidence_score", 0)), 0))
             for edge in case_data.get("edges", []):
                 cursor.execute('''INSERT OR IGNORE INTO trace_transactions
                     (run_id, tx_hash, source_address, target_address, amount, token, block_timestamp, source_provider)

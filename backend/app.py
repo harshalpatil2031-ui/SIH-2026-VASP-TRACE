@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 import os
 import hashlib
+import json
 import sqlite3
 
 try:
@@ -58,13 +59,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# One canonical database location.  The dashboard and forensic store must never
+# depend on the process working directory, otherwise they can read different files.
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cctns_forensics.db")
+
 # Instantiate Core Forensic Engines & PostgreSQL/CCTNS Store
 graph_engine = GraphEngine()
 attribution_engine = AttributionEngine()
 cross_case_engine = CrossCaseEngine()
 sahyog_router = SahyogRouter()
 evidence_verifier = EvidenceVerifier()
-db_store = CCTNSDatabaseStore()
+db_store = CCTNSDatabaseStore(DB_PATH)
 ingestion_adapter = BlockchainIngestionAdapter()
 trace_coordinator = TraceCoordinator()
 live_trace_jobs = LiveTraceJobManager()
@@ -73,9 +78,6 @@ live_trace_jobs = LiveTraceJobManager()
 for c_id, c_data in CASES_DATABASE.items():
     cross_case_engine.register_case_nodes(c_id, c_data, c_data["nodes"])
     db_store.save_case(c_data)
-
-# Database setup for cctns_forensics.db
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cctns_forensics.db")
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -131,9 +133,34 @@ def init_cctns_db():
                 cursor.execute(f"ALTER TABLE cctns_cases ADD COLUMN {col} {col_type}")
 
         run_cols = {row[1] for row in cursor.execute("PRAGMA table_info(investigation_runs)").fetchall()}
-        for col, col_type in [("attributed_vasp", "TEXT"), ("confidence_score", "REAL DEFAULT 0.0"), ("hold_active", "INTEGER DEFAULT 1")]:
+        for col, col_type in [("attributed_vasp", "TEXT"), ("confidence_score", "REAL DEFAULT 0.0"), ("hold_active", "INTEGER DEFAULT 0")]:
             if col not in run_cols:
                 cursor.execute(f"ALTER TABLE investigation_runs ADD COLUMN {col} {col_type}")
+        # Older trace rows predate the dispatch workflow.  They cannot represent
+        # an acknowledged exchange hold when no target VASP was recorded.
+        cursor.execute("""
+            UPDATE investigation_runs
+            SET hold_active = 0
+            WHERE attributed_vasp IS NULL OR TRIM(attributed_vasp) = ''
+        """)
+        # Backfill dashboard fields from immutable historic trace evidence that
+        # was saved before these reporting columns were introduced.
+        legacy_runs = cursor.execute("""
+            SELECT run_id, attribution_json FROM investigation_runs
+            WHERE attributed_vasp IS NULL OR TRIM(attributed_vasp) = ''
+        """).fetchall()
+        for run_id, attribution_json in legacy_runs:
+            try:
+                attribution_data = json.loads(attribution_json or "{}")
+                vasp_name = attribution_data.get("primary_vasp", {}).get("vasp_name")
+                confidence = float(attribution_data.get("confidence_score", 0))
+                if vasp_name and vasp_name != "No qualifying VASP endpoint found within max_hops":
+                    cursor.execute(
+                        "UPDATE investigation_runs SET attributed_vasp = ?, confidence_score = ? WHERE run_id = ?",
+                        (vasp_name, confidence, run_id),
+                    )
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
 
         synd_cols = {row[1] for row in cursor.execute("PRAGMA table_info(syndicate_registry)").fetchall()}
         for col, col_type in [("case_id", "TEXT"), ("role", "TEXT DEFAULT 'Shared Intermediary Mule'"), ("first_seen", "TEXT")]:
@@ -280,7 +307,8 @@ def get_dashboard_cases():
         # Fetch all active cases ordered by created_at DESC
         cursor.execute("""
             SELECT case_id, fir_number, title, police_station, investigating_officer,
-                   incident_date, amount_inr, chain, suspect_wallet, token, notes, status, created_at
+                   incident_date, COALESCE(amount_inr, stolen_amount_inr, 0) AS amount_inr,
+                   chain, suspect_wallet, token, notes, status, created_at
             FROM cctns_cases
             WHERE status = 'ACTIVE' OR status IS NULL
             ORDER BY created_at DESC
@@ -296,69 +324,6 @@ def get_dashboard_cases():
             "syndicates_linked": syndicates_linked_count
         },
         "cases": cases_list
-    }
-
-@app.post("/api/cases/create")
-def create_case(payload: Dict[str, Any] = Body(...)):
-    """
-    Creates a new case record in cctns_forensics.db and registers it in the live analysis engine.
-    """
-    fir_number = payload.get("fir_number", "").strip() or "FIR/2026/CY-GEN/001"
-    suspect_wallet = payload.get("suspect_wallet", "").strip()
-    chain = payload.get("chain", "TRON")
-    amount_inr = float(payload.get("amount_inr", 180000))
-    notes = payload.get("notes", "New cybercrime investigation docket.")
-    title = payload.get("title", "").strip() or f"₹{int(amount_inr):,} Crypto Fraud Investigation"
-
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM cctns_cases")
-        count = cursor.fetchone()[0]
-        case_id = f"CASE-{count + 148}"
-
-        cursor.execute("""
-            INSERT INTO cctns_cases (case_id, fir_number, title, police_station, investigating_officer, incident_date, amount_inr, stolen_amount_inr, chain, suspect_wallet, token, notes, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-        """, (
-            case_id,
-            fir_number,
-            title,
-            "Cyber Crime Police Station",
-            "Investigating Officer",
-            datetime.now().strftime("%Y-%m-%d"),
-            amount_inr,
-            amount_inr,
-            chain,
-            suspect_wallet,
-            "USDT",
-            notes,
-            "ACTIVE"
-        ))
-        conn.commit()
-
-    # Register in CASES_DATABASE so immediate workbench analysis works
-    new_case_obj = generate_custom_trace(suspect_wallet, chain=chain)
-    new_case_obj["case_id"] = case_id
-    new_case_obj["title"] = title
-    new_case_obj["fir_number"] = fir_number
-    new_case_obj["amount_inr"] = amount_inr
-    new_case_obj["chain"] = chain
-    new_case_obj["notes"] = notes
-    CASES_DATABASE[case_id] = new_case_obj
-    cross_case_engine.register_case_nodes(case_id, new_case_obj, new_case_obj["nodes"])
-
-    return {
-        "status": "SUCCESS",
-        "case_id": case_id,
-        "case": {
-            "case_id": case_id,
-            "fir_number": fir_number,
-            "title": title,
-            "amount_inr": amount_inr,
-            "chain": chain,
-            "suspect_wallet": suspect_wallet,
-            "notes": notes
-        }
     }
 
 @app.get("/api/cases")
@@ -587,7 +552,13 @@ def dispatch_sahyog(payload: Dict[str, Any] = Body(...)):
             or payload.get("vasp_name") != stored_candidate.get("vasp_name")
         ):
             raise ValueError("Dispatch blocked: the saved evidence run does not support this VASP request.")
-        return sahyog_router.dispatch_sahyog_request(payload)
+        receipt = sahyog_router.dispatch_sahyog_request(payload)
+        # The dashboard reports actual acknowledged holds, not every trace run.
+        if receipt.get("status") == "DISPATCHED_AND_ACKNOWLEDGED":
+            with get_db() as conn:
+                conn.execute("UPDATE investigation_runs SET hold_active = 1 WHERE run_id = ?", (run_id,))
+                conn.commit()
+        return receipt
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
 
