@@ -4,6 +4,7 @@ Generates tamper-evident technical integrity records under Section 63 Bharatiya 
 """
 import hashlib
 import json
+import uuid
 from datetime import datetime
 from typing import Dict, Any
 
@@ -45,6 +46,22 @@ class EvidenceVerifier:
             }
         }
 
+    def generate_trace_manifest(self, case_data: Dict[str, Any], trace_provenance: Dict[str, Any], attribution_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Creates a technical, reproducible integrity record for one trace run."""
+        edges = case_data.get("edges", [])
+        payload = {
+            "case_id": case_data.get("case_id"), "suspect_wallet": case_data.get("suspect_wallet"),
+            "chain": case_data.get("chain"), "data_mode": trace_provenance.get("data_mode", "DEMO"),
+            "retrieved_at": trace_provenance.get("retrieved_at"),
+            "transactions": [{"hash": e.get("tx_hash"), "source": e.get("source"), "target": e.get("target"), "amount": e.get("amount"), "timestamp": e.get("timestamp")} for e in edges],
+            "source_events": trace_provenance.get("source_events", []),
+            "attribution": {"vasp": attribution_data.get("primary_vasp", {}).get("vasp_name"), "confidence": attribution_data.get("confidence_score")},
+        }
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return {"investigation_run_id": "RUN-" + uuid.uuid4().hex[:16].upper(), "sha256_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+                "payload": payload, "integrity_status": "TAMPER_EVIDENT_TECHNICAL_RECORD",
+                "disclaimer": "Technical integrity record only; authorized investigator attestation and lawful process remain required."}
+
     def verify_hash(self, submitted_hash: str, expected_hash: str) -> Dict[str, Any]:
         """Validates if the submitted SHA-256 forensic hash matches the cryptographic blockchain snapshot."""
         clean_sub = submitted_hash.strip().lower()
@@ -62,3 +79,8 @@ class EvidenceVerifier:
                 "ALERT: Checksum mismatch. The evidence file or parameters have been altered!"
             )
         }
+
+    def verify_trace_manifest(self, manifest_payload: Dict[str, Any], expected_hash: str) -> Dict[str, Any]:
+        canonical = json.dumps(manifest_payload, sort_keys=True, separators=(",", ":"))
+        computed = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        return self.verify_hash(computed, expected_hash)
